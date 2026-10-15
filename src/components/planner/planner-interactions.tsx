@@ -40,6 +40,7 @@ const InteractionContext = createContext<{
   editTask: (id: string) => void;
   preview: Preview | null;
   busy: boolean;
+  draggingMeeting: boolean;
   taskTiming: (task: Task) => string;
 }>({
   openMeeting: () => {},
@@ -47,6 +48,7 @@ const InteractionContext = createContext<{
   editTask: () => {},
   preview: null,
   busy: false,
+  draggingMeeting: false,
   taskTiming: () => "",
 });
 export const usePlannerInteractions = () => useContext(InteractionContext);
@@ -132,6 +134,7 @@ export function PlannerInteractions({
         editTask: setEditingId,
         preview,
         busy,
+        draggingMeeting: draggedMeeting !== null,
         taskTiming: (task) => {
           const block = blocks.find((b) => b.id === task.occurrenceId);
           const range = block ? taskRange(task, block) : null;

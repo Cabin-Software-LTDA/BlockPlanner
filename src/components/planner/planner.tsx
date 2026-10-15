@@ -40,7 +40,6 @@ import { useNextcloudCalendar } from "./use-nextcloud-calendar";
 import { NextcloudPanel } from "./nextcloud-panel";
 import { CalendarPanel } from "./calendar-panel";
 import { CalendarAgenda, MeetingLane } from "./calendar-meetings";
-import { hasClockChange } from "@/domain/calendar";
 import { routineSummary } from "@/domain/recurrence";
 export default function Planner() {
   const [ready, setReady] = useState(false);
@@ -579,7 +578,7 @@ export default function Planner() {
               tabIndex={0}
             >
               <div
-                className={`timeline ${calendarEvents.some((e) => !e.allDay) && !hasClockChange(date, timezone) ? "has-meetings" : ""}`}
+                className="timeline"
                 style={{
                   height:
                     (preferences.visibleEnd - preferences.visibleStart) * 100,

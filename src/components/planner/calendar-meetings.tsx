@@ -157,7 +157,7 @@ export function MeetingLane({
   preferences: UserPreferences;
   blocks: TimeBlockOccurrence[];
 }) {
-  const { ownerOf, busy } = usePlannerInteractions();
+  const { ownerOf, busy, draggingMeeting } = usePlannerInteractions();
   const drop = useDroppable({
     id: "meeting-outside",
     data: { kind: "meeting-outside" },
@@ -177,6 +177,7 @@ export function MeetingLane({
       minuteOnDay(e.start, date, preferences.timezone) <
         preferences.visibleEnd * 60,
   );
+  if (!timed.length && !draggingMeeting) return null;
   // Reuse interval partitioning: meetings are independent entities, never persisted as blocks.
   const placements = layoutBlocks(timed);
   return (
