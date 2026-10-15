@@ -1,4 +1,5 @@
 "use client";
+import { TaskProgress } from "./task-progress";
 import { useId, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import {
@@ -27,7 +28,7 @@ function TaskRow({
   draggable: boolean;
 }) {
   const instanceId = useId();
-  const { editTask, busy } = usePlannerInteractions();
+  const { editTask, busy, taskTiming } = usePlannerInteractions();
   const drag = useDraggable({
     id: `${instanceId}:task:${task.id}`,
     data: { kind: "task", taskId: task.id },
@@ -43,68 +44,78 @@ function TaskRow({
     disabled: !draggable || busy,
   });
   return (
-    <div
-      ref={drop.setNodeRef}
-      className={`task-row ${drop.isOver ? "task-drop-before" : ""} ${drag.isDragging ? "dragging-task" : ""}`}
-    >
-      {draggable && (
-        <button
-          ref={drag.setNodeRef}
-          {...drag.attributes}
-          {...drag.listeners}
-          className="icon-button drag-handle"
-          aria-label={`Drag task ${task.title}`}
-          title="Drag to reorder or move to another block"
-        >
-          <GripVertical size={13} />
-        </button>
-      )}
-      <input
-        type="checkbox"
-        aria-label={`Complete ${task.title}`}
-        checked={task.completed}
-        onChange={() =>
-          void run(() =>
-            db.tasks.update(task.id, { completed: !task.completed }),
-          )
-        }
-      />
-      <button
-        className={`task-title ${task.completed ? "completed" : ""}`}
-        aria-label={`Edit task ${task.title}`}
-        onClick={() => editTask(task.id)}
+    <div className="task-list-card">
+      <div
+        ref={drop.setNodeRef}
+        title={taskTiming(task)}
+        className={`task-row ${drop.isOver ? "task-drop-before" : ""} ${drag.isDragging ? "dragging-task" : ""}`}
       >
-        {task.title}
-        {task.estimatedMinutes !== undefined && (
-          <small>{task.estimatedMinutes}m</small>
+        {draggable && (
+          <button
+            ref={drag.setNodeRef}
+            {...drag.attributes}
+            {...drag.listeners}
+            className="icon-button drag-handle"
+            aria-label={`Drag task ${task.title}`}
+            title="Drag to reorder or move to another block"
+          >
+            <GripVertical size={13} />
+          </button>
         )}
-        {task.notes && <StickyNote size={12} aria-label="Has notes" />}
-      </button>
-      <div className="task-actions">
+        <input
+          type="checkbox"
+          aria-label={`Complete ${task.title}`}
+          checked={task.completed}
+          onChange={() =>
+            void run(() =>
+              db.tasks.update(task.id, { completed: !task.completed }),
+            )
+          }
+        />
         <button
-          className="icon-button"
-          disabled={first || busy}
-          aria-label={`Move ${task.title} up`}
-          onClick={() => void run(() => reorderTask(task.id, -1))}
+          className={`task-title ${task.completed ? "completed" : ""}`}
+          aria-label={`Edit task ${task.title}`}
+          onClick={() => editTask(task.id)}
         >
-          <ArrowUp size={12} />
+          {task.title}
+          {task.schedule && (
+            <small>{task.schedule.durationMinutes}m scheduled</small>
+          )}
+          {!task.schedule && task.estimatedMinutes !== undefined && (
+            <small>{task.estimatedMinutes}m</small>
+          )}
+          {task.notes && <StickyNote size={12} aria-label="Has notes" />}
         </button>
-        <button
-          className="icon-button"
-          disabled={last || busy}
-          aria-label={`Move ${task.title} down`}
-          onClick={() => void run(() => reorderTask(task.id, 1))}
-        >
-          <ArrowDown size={12} />
-        </button>
-        <button
-          className="icon-button"
-          aria-label={`Delete ${task.title}`}
-          onClick={() => void run(() => db.tasks.delete(task.id))}
-        >
-          <Trash2 size={12} />
-        </button>
+        <div className="task-actions">
+          <button
+            className="icon-button"
+            disabled={first || busy}
+            aria-label={`Move ${task.title} up`}
+            onClick={() => void run(() => reorderTask(task.id, -1))}
+          >
+            <ArrowUp size={12} />
+          </button>
+          <button
+            className="icon-button"
+            disabled={last || busy}
+            aria-label={`Move ${task.title} down`}
+            onClick={() => void run(() => reorderTask(task.id, 1))}
+          >
+            <ArrowDown size={12} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label={`Delete ${task.title}`}
+            onClick={() => void run(() => db.tasks.delete(task.id))}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
+      {task.schedule && (
+        <p className="muted task-time-label">{taskTiming(task)}</p>
+      )}
+      <TaskProgress task={task} run={run} />
     </div>
   );
 }

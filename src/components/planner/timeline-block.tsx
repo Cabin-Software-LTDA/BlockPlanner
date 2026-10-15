@@ -23,6 +23,9 @@ import {
 } from "@/domain/interactions";
 import { adjustBlockTime } from "@/lib/db/repository";
 import { usePlannerInteractions, type RunAction } from "./planner-interactions";
+import { ScheduledTasks } from "./scheduled-tasks";
+import { hasClockChange } from "@/domain/calendar";
+import { taskFits } from "@/domain/task-schedule";
 import { TaskList } from "./task-list";
 import { BlockMeetings } from "./calendar-meetings";
 const icons = {
@@ -125,10 +128,23 @@ export function TimelineBlock({
   open: () => void;
   run: RunAction;
 }) {
+  const hasTimedItems =
+    tasks.some((t) => t.schedule && taskFits(t, block)) ||
+    meetings.some((m) => !m.allDay);
+  const clockChange = hasClockChange(date, preferences.timezone);
   const { preview, busy } = usePlannerInteractions();
   const drop = useDroppable({
     id: `block-list:${block.id}`,
-    data: { kind: "task-list", occurrenceId: block.id },
+    data: {
+      kind: clockChange ? "task-list" : "task-time",
+      occurrenceId: block.id,
+      date,
+      timezone: preferences.timezone,
+      visibleStart: Math.max(
+        preferences.visibleStart * 60,
+        minuteOnDay(block.start, date, preferences.timezone),
+      ),
+    },
     disabled: busy,
   });
   const range = preview?.id === block.id ? preview : block;
@@ -143,7 +159,7 @@ export function TimelineBlock({
     <article
       ref={drop.setNodeRef}
       aria-label={`Block ${block.title}`}
-      className={`time-block ${block.color} ${selected ? "selected" : ""} ${preview?.id === block.id ? "block-preview" : ""} ${drop.isOver ? "block-drop-over" : ""} ${compact ? "compact-block" : ""}`}
+      className={`time-block ${clockChange ? "" : `timed-block ${hasTimedItems ? "" : "empty-timed-block"}`} ${block.color} ${selected ? "selected" : ""} ${preview?.id === block.id ? "block-preview" : ""} ${drop.isOver ? "block-drop-over" : ""} ${compact ? "compact-block" : ""}`}
       style={{
         top: ((start - preferences.visibleStart * 60) * PIXELS_PER_HOUR) / 60,
         height,
@@ -218,13 +234,25 @@ export function TimelineBlock({
           </button>
         </div>
         <BlockMeetings
-          events={meetings}
+          events={clockChange ? meetings : meetings.filter((m) => m.allDay)}
           block={{ ...block, ...range }}
           timezone={preferences.timezone}
         />
+        {tasks.some((t) => !taskFits(t, block)) && (
+          <p className="form-error">
+            Some tasks no longer fit. Edit their timing below.
+          </p>
+        )}
+        {clockChange && (
+          <p className="muted">
+            Clocks change today. Use task details for exact timing.
+          </p>
+        )}
         {!compact && (
           <TaskList
-            tasks={tasks}
+            tasks={tasks.filter(
+              (t) => clockChange || !t.schedule || !taskFits(t, block),
+            )}
             occurrenceId={block.id}
             run={run}
             dropZone={false}
@@ -238,6 +266,18 @@ export function TimelineBlock({
           </button>
         )}
       </div>
+      {!clockChange && (
+        <ScheduledTasks
+          tasks={tasks}
+          meetings={meetings}
+          block={{ ...block, ...range }}
+          date={date}
+          preferences={preferences}
+          start={start}
+          end={end}
+          run={run}
+        />
+      )}
       {actualEnd <= preferences.visibleEnd * 60 && (
         <TimeHandle
           block={block}

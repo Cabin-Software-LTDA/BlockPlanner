@@ -21,7 +21,7 @@ async function snapshot(database: TimeBlockDB): Promise<PlannerBackup> {
     ]);
   return validateBackup({
     format: "timeblock",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     data: { definitions, occurrences, exceptions, tasks, preferences, layouts },
   });

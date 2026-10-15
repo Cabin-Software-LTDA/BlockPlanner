@@ -68,7 +68,7 @@ Routines keep their creation timezone. DST gaps/ambiguous times produce a dated 
 
 1. Drag a block's grip vertically. Start/end preview snaps to the 15/30-minute setting; release commits once. Escape cancels a drag. Drag the top/bottom line to resize. Tab to any handle and press Up/Down for the same increment, or Enter for details.
 2. Click a task title to edit its name, notes, estimate, or destination. Escape closes the dialog. Estimate does not schedule a task.
-3. Drag a task's grip onto another task to insert before it, or onto blank block/inbox space to append. The up/down buttons reorder without dragging. Use the dialog to move to dates outside the current view.
+3. Drag a task's grip onto another task to insert before it, or onto inbox space to append. Dropping onto the timeline area of a block now schedules the task at that time. The up/down buttons reorder without dragging. Use the dialog to move to dates outside the current view.
 4. Resize a block below 45 minutes and open its heading to manage tasks in the details panel. Move a block's date in that panel; tasks stay attached.
 5. Reload to verify timing, task order, notes, estimates, and completion. Delete a block to preserve its tasks at the end of Unscheduled.
 
@@ -76,7 +76,7 @@ Limits: blocks are 15 minutes to 24 wall-clock hours. Resize enforces at least t
 
 See [architecture](docs/architecture.md) for relationships, edge cases, and milestone sequence.
 
-Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 78 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
+Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 86 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
 
 ## Phase 4 Google Calendar setup and verification
 
@@ -97,7 +97,7 @@ Use the same hostname/port as your original planner to retain that origin's Inde
 
 ## Phase 5: backup and usability checks
 
-- Open **Backup and restore** in the sidebar (under **Planning tools** on mobile). Download JSON, select that file again, inspect the counts/timezone, acknowledge replacement, and restore. The UI does not write anything until the restore button is activated. Only TimeBlock format version 1 JSON up to 20 MB is accepted; this format version is separate from IndexedDB schema version 3.
+- Open **Backup and restore** in the sidebar (under **Planning tools** on mobile). Download JSON, select that file again, inspect the counts/timezone, acknowledge replacement, and restore. The UI does not write anything until the restore button is activated. TimeBlock format version 1 or 2 JSON up to 20 MB is accepted; this format version is separate from IndexedDB schema version 3.
 - A restore replaces blocks, definitions, tasks, exceptions, preferences and daily layouts. It preserves IDs, task notes, completion and recurrence identity. It excludes Google connection metadata, cached meetings and credentials; existing calendar data stays unchanged.
 - The previous planner is saved inside the same transaction as the replacement. **Restore recovery copy** swaps the current planner and the saved copy, so intervening edits remain recoverable. A subsequent file restore replaces the recovery slot with the workspace that existed immediately before that restore. Download the recovery copy if you need to retain it independently.
 - Invalid formats, duplicate IDs, orphan references, invalid recurrence exceptions, malformed dates/timezones and invalid ranges fail before writing. A storage failure rolls back both the replacement and the recovery snapshot.
@@ -106,7 +106,7 @@ Use the same hostname/port as your original planner to retain that origin's Inde
 - On a narrow screen, **Planning tools** expands the calendar, routines, inbox, backup controls and theme switch. **Day list** shows all blocks intersecting the day, including blocks outside the configured timeline hours. Timeline remains the default and scrolls horizontally inside its own region when calendar lanes need space.
 - **View settings → Display timezone** changes the view and the default for new blocks. It never moves existing blocks or changes routine definitions. The day list uses full dates and UTC offsets to make overnight/timezone boundaries explicit.
 
-Verification: 78 automated tests, strict TypeScript and production build. Browser smoke tests verified actual JSON download/file selection, restore preview and acknowledgement, replacement/recovery, preserved task notes/completion, keyboard new-block, typing suppression, inline validation, Escape/focus restoration, and a 390px day-list layout without page overflow. Physical touch hardware and a full assistive-technology audit remain outstanding. This app still requires a reachable server for a fresh page launch; it does not install a service worker.
+Verification: 86 automated tests, strict TypeScript and production build. Browser smoke tests verified actual JSON download/file selection, restore preview and acknowledgement, replacement/recovery, preserved task notes/completion, keyboard new-block, typing suppression, inline validation, Escape/focus restoration, and a 390px day-list layout without page overflow. Physical touch hardware and a full assistive-technology audit remain outstanding. This app still requires a reachable server for a fresh page launch; it does not install a service worker.
 
 ## Vercel deployment
 
@@ -115,3 +115,17 @@ Verification: 78 automated tests, strict TypeScript and production build. Browse
 If a deployment was already built from an older commit, redeploy the latest `main`. The isolated configuration fix is commit `c17c379`. The production build is validated locally; remote deployment status is not verified from this workspace.
 
 Because `.env.local` is intentionally ignored, add `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in Vercel's environment settings for the relevant environments, then redeploy. Register the deployed HTTPS origin in Google Cloud's Authorized JavaScript origins. No client secret is needed. Localhost and the deployed site have separate browser storage: use **Backup and restore** to move planner data between them, and connect Google separately on the deployed origin.
+
+
+## Timed tasks, checklists and rich notes
+
+- Click a task → **Schedule this task**, choose its start and duration, then save. Drag its grip inside the block's right-hand timeline area to change its start, snapped to the configured increment. Dragging an unscheduled task there gives it its estimate or a 30-minute duration. Drop only where the whole task fits.
+- Task cards and Google meetings use the same vertical time scale. Overlaps get side-by-side lanes; a dashed task border indicates a conflict. Nothing is automatically rearranged or split around a meeting. For Work 13:00–18:00 with a 15:00–16:00 meeting, place tasks before 15:00 or after 16:00 yourself.
+- Keyboard: focus a scheduled task's grip, use Up/Down to move by one increment, or Shift+Up/Down to adjust duration. The task dialog supports exact times, dates and durations and is also available from Day list.
+- Add checklist items in task details; toggle them directly on cards. Counts and progress bars are independent of the task's overall completed checkbox. Short cards show a compact progress strip; open details for all steps.
+- Notes use a lazy-loaded Tiptap rich-text editor with bold, italic, headings, lists, quotes, code and links. Switch to Markdown to edit source. Click **Save task** to persist edits; Escape discards the draft. Rich notes are local task data, including meeting notes you write there; they do not modify Google events. Existing plain-text notes are kept as literal text until edited.
+- Scheduling is optional and uses elapsed minutes relative to the parent occurrence start. Moving a block carries its tasks; shortening a block never truncates tasks. Tasks that no longer fit appear in the block's list with a warning. Moving via list controls to a different block or the inbox clears timing; dropping onto another block's timeline sets a new time. Removing/skipping blocks rescues notes and checklists to the inbox.
+- On daylight-saving clock-change days, timed cards use the task-list fallback. Exact ranges with UTC offsets remain available; ambiguous/nonexistent new wall times are rejected.
+- IndexedDB stays at schema v3: these are optional non-indexed fields, so no destructive migration is necessary. New JSON backups use format v2, preserving schedules, checklist IDs/status, and Markdown. Legacy v1 backups remain readable; old app versions reject v2 rather than silently discarding these fields.
+
+Validation: 86 automated tests cover overnight placement, DST rejection, persistence after reopening, drag scheduling bounds, checklist progress, rescue semantics, legacy backups and v2 round trips. Browser checks cover timed card placement, pointer drag, keyboard movement, checklist persistence, and Markdown-to-rich-text rendering. Live Google authorization remains dependent on your Google Cloud configuration.

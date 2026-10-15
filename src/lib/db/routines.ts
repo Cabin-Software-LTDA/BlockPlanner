@@ -100,6 +100,7 @@ async function rescueTasks(ids: Set<string>, database: typeof db) {
     [...inbox, ...rescued].map((task, order) => ({
       ...task,
       occurrenceId: null,
+      schedule: undefined,
       order,
     })),
   );

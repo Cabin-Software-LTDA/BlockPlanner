@@ -20,18 +20,21 @@ import {
   PIXELS_PER_HOUR,
   type BlockAction,
 } from "@/domain/interactions";
-import { adjustBlockTime, moveTask } from "@/lib/db/repository";
+import { adjustBlockTime, moveTask, scheduleTask } from "@/lib/db/repository";
+import { taskRange, scheduleAtMinute } from "@/domain/task-schedule";
+import { meetingLabel } from "@/domain/calendar";
 import { TaskEditor } from "./task-editor";
 export type RunAction = (action: () => Promise<unknown>) => Promise<boolean>;
 type DragData =
-  | { kind: "task"; taskId: string }
+  | { kind: "task"; taskId: string; scheduled?: boolean }
   | { kind: "block"; blockId: string; action: BlockAction };
 type Preview = { id: string; start: string; end: string };
 const InteractionContext = createContext<{
   editTask: (id: string) => void;
   preview: Preview | null;
   busy: boolean;
-}>({ editTask: () => {}, preview: null, busy: false });
+  taskTiming: (task: Task) => string;
+}>({ editTask: () => {}, preview: null, busy: false, taskTiming: () => "" });
 export const usePlannerInteractions = () => useContext(InteractionContext);
 const collisionDetection: CollisionDetection = (args) => {
   if (args.active.data.current?.kind !== "task") return [];
@@ -89,7 +92,18 @@ export function PlannerInteractions({
   }
   return (
     <InteractionContext.Provider
-      value={{ editTask: setEditingId, preview, busy }}
+      value={{
+        editTask: setEditingId,
+        preview,
+        busy,
+        taskTiming: (task) => {
+          const block = blocks.find((b) => b.id === task.occurrenceId);
+          const range = block ? taskRange(task, block) : null;
+          return range
+            ? meetingLabel({ ...range, allDay: false }, preferences.timezone)
+            : "";
+        },
+      }}
     >
       <DndContext
         sensors={sensors}
@@ -150,7 +164,35 @@ export function PlannerInteractions({
             );
           } else if (data?.kind === "task" && event.over) {
             const target = event.over.data.current;
-            if (
+            if (target?.kind === "task-time") {
+              const block = blocks.find((b) => b.id === target.occurrenceId);
+              const task = tasks.find((t) => t.id === data.taskId);
+              if (block && task)
+                ok = await run(async () => {
+                  const pointer = event.activatorEvent as PointerEvent;
+                  const y = data.scheduled
+                    ? event.active.rect.current.translated?.top
+                    : pointer.clientY + event.delta.y;
+                  if (y === undefined || !Number.isFinite(y))
+                    throw new Error(
+                      "Could not determine task position. Use task details to set a time.",
+                    );
+                  const minute =
+                    target.visibleStart +
+                    ((y - event.over!.rect.top) * 60) / PIXELS_PER_HOUR;
+                  const schedule = scheduleAtMinute(
+                    block,
+                    target.date,
+                    target.timezone,
+                    minute,
+                    task.schedule?.durationMinutes ??
+                      task.estimatedMinutes ??
+                      30,
+                    preferences.increment,
+                  );
+                  await scheduleTask(task.id, block.id, schedule);
+                });
+            } else if (
               target?.kind === "task-target" ||
               target?.kind === "task-list"
             ) {

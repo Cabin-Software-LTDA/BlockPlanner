@@ -43,6 +43,9 @@ export interface Task {
   completed: boolean;
   notes: string;
   estimatedMinutes?: number;
+  schedule?: { offsetMinutes: number; durationMinutes: number };
+  checklist?: { id: string; title: string; completed: boolean }[];
+  notesFormat?: "markdown";
   order: number;
   createdAt: string;
 }

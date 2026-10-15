@@ -1,3 +1,4 @@
+import { taskFits, validateTaskSchedule } from "../../domain/task-schedule";
 import { exceptionId } from "../../domain/recurrence";
 import {
   adjustBlock,
@@ -130,6 +131,7 @@ export async function removeBlock(id: string, database: TimeBlockDB = db) {
         [...inbox, ...rescued].map((task, order) => ({
           ...task,
           occurrenceId: null,
+          schedule: undefined,
           order,
         })),
       );
@@ -196,7 +198,15 @@ export async function adjustBlockTime(
   );
 }
 
-export type TaskChanges = Pick<Task, "title" | "notes" | "estimatedMinutes">;
+export type TaskChanges = Pick<
+  Task,
+  | "title"
+  | "notes"
+  | "estimatedMinutes"
+  | "schedule"
+  | "checklist"
+  | "notesFormat"
+>;
 export async function saveTask(
   id: string,
   changes: TaskChanges,
@@ -218,6 +228,24 @@ export async function saveTask(
     async () => {
       const task = await database.tasks.get(id);
       if (!task) throw new Error("This task no longer exists.");
+      if (changes.schedule) {
+        validateTaskSchedule(changes.schedule);
+        const block = destination
+          ? await database.occurrences.get(destination)
+          : null;
+        if (!block) throw new Error("Choose a block before scheduling a task.");
+        // Existing overflow remains editable after a block is shortened.
+        const unchanged =
+          destination === task.occurrenceId &&
+          JSON.stringify(changes.schedule) === JSON.stringify(task.schedule);
+        if (
+          !unchanged &&
+          !taskFits({ ...task, schedule: changes.schedule }, block)
+        )
+          throw new Error("The task must fit within its block.");
+      }
+      if (changes.checklist?.some((item) => !item.title.trim()))
+        throw new Error("Checklist items need a name.");
       if (destination !== task.occurrenceId)
         await moveTask(id, destination, null, database);
       await database.tasks.update(id, {
@@ -263,7 +291,11 @@ export async function moveTask(
           : target.findIndex((t) => t.id === beforeId);
       if (index < 0)
         throw new Error("The destination task changed. Please try again.");
-      target.splice(index, 0, { ...task, occurrenceId: destination });
+      target.splice(index, 0, {
+        ...task,
+        occurrenceId: destination,
+        schedule: destination === task.occurrenceId ? task.schedule : undefined,
+      });
       const source =
         task.occurrenceId === destination
           ? []
@@ -320,4 +352,47 @@ async function recordOverride(
       occurrenceId: block.id,
     });
   }
+}
+
+export async function scheduleTask(
+  id: string,
+  destination: string,
+  schedule: NonNullable<Task["schedule"]>,
+  database = db,
+) {
+  await database.transaction(
+    "rw",
+    database.tasks,
+    database.occurrences,
+    async () => {
+      const task = await database.tasks.get(id);
+      if (!task) throw new Error("This task no longer exists.");
+      await saveTask(
+        id,
+        {
+          title: task.title,
+          notes: task.notes,
+          estimatedMinutes: task.estimatedMinutes,
+          schedule,
+        },
+        destination,
+        database,
+      );
+    },
+  );
+}
+export async function toggleChecklistItem(
+  taskId: string,
+  itemId: string,
+  database = db,
+) {
+  await database.transaction("rw", database.tasks, async () => {
+    const task = await database.tasks.get(taskId);
+    if (!task) throw new Error("This task no longer exists.");
+    await database.tasks.update(taskId, {
+      checklist: task.checklist?.map((item) =>
+        item.id === itemId ? { ...item, completed: !item.completed } : item,
+      ),
+    });
+  });
 }

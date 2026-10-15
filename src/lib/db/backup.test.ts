@@ -47,6 +47,9 @@ async function fixture(db: TimeBlockDB) {
     completed: true,
     notes: "Notes survive\nUnicode ✓",
     estimatedMinutes: 25,
+    schedule: { offsetMinutes: 15, durationMinutes: 45 },
+    checklist: [{ id: "step", title: "Review", completed: true }],
+    notesFormat: "markdown",
   });
   await addTask("Inbox", null, db);
   await db.layouts.put({ date: "2026-10-15", visibleStart: 0, visibleEnd: 24 });
@@ -155,7 +158,7 @@ it("rejects malformed, future-version and dangling-reference backups without mut
   const before = await exportBackup(target);
   const invalid = [
     null,
-    { ...valid, version: 2 },
+    { ...valid, version: 99 },
     {
       ...valid,
       data: {
@@ -306,4 +309,31 @@ it("rejects oversized input before parsing and refuses recovery when none exists
   const db = await database();
   await expect(undoRestore(db)).rejects.toThrow("No restore recovery copy");
   expect(await db.preferences.count()).toBe(1);
+});
+
+it("accepts legacy v1 backups without inventing task schedules", async () => {
+  const db = await database();
+  await addTask("Legacy", null, db);
+  const legacy = { ...(await exportBackup(db)), version: 1 };
+  await restoreBackup(legacy, db);
+  expect((await db.tasks.toArray())[0].schedule).toBeUndefined();
+});
+it("rejects corrupt task timing and duplicate checklist IDs", async () => {
+  const db = await database();
+  const backup = await fixture(db);
+  const index = backup.data.tasks.findIndex((t) => t.schedule);
+  for (const patch of [
+    { schedule: { offsetMinutes: -1, durationMinutes: 30 } },
+    { schedule: { offsetMinutes: 0, durationMinutes: 0 } },
+    {
+      checklist: [
+        { id: "x", title: "A", completed: false },
+        { id: "x", title: "B", completed: true },
+      ],
+    },
+  ]) {
+    const value = structuredClone(backup);
+    Object.assign(value.data.tasks[index], patch);
+    expect(() => validateBackup(value)).toThrow("Invalid backup");
+  }
 });

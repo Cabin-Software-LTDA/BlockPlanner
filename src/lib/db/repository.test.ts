@@ -261,3 +261,90 @@ it("appends rescued tasks after the inbox with unique order values", async () =>
     ["Rescued", 1, null],
   ]);
 });
+
+it("persists task timing, checklist and Markdown, clears timing on rescue, and never loses notes", async () => {
+  const { scheduleTask, toggleChecklistItem } = await import("./repository");
+  const db = database();
+  const block = await createBlock(
+    {
+      title: "Work",
+      date: "2026-10-15",
+      start: "13:00",
+      end: "18:00",
+      timezone: "UTC",
+      color: "sage",
+      icon: "briefcase",
+    },
+    db,
+  );
+  await addTask("Feature", block, db);
+  const task = (await db.tasks.toArray())[0];
+  await saveTask(
+    task.id,
+    {
+      title: task.title,
+      notes: "## Decisions\n\n[Reference](https://example.com)",
+      notesFormat: "markdown",
+      checklist: [{ id: "step", title: "Review", completed: false }],
+    },
+    block,
+    db,
+  );
+  await scheduleTask(
+    task.id,
+    block,
+    { offsetMinutes: 180, durationMinutes: 60 },
+    db,
+  );
+  await toggleChecklistItem(task.id, "step", db);
+  db.close();
+  await db.open();
+  expect((await db.tasks.get(task.id))?.schedule).toEqual({
+    offsetMinutes: 180,
+    durationMinutes: 60,
+  });
+  expect((await db.tasks.get(task.id))?.checklist?.[0].completed).toBe(true);
+  await expect(
+    scheduleTask(
+      task.id,
+      block,
+      { offsetMinutes: 290, durationMinutes: 30 },
+      db,
+    ),
+  ).rejects.toThrow("fit");
+  expect((await db.tasks.get(task.id))?.schedule?.offsetMinutes).toBe(180);
+  await removeBlock(block, db);
+  const rescued = await db.tasks.get(task.id);
+  expect(rescued?.schedule).toBeUndefined();
+  expect(rescued?.occurrenceId).toBeNull();
+  expect(rescued?.notes).toContain("[Reference]");
+});
+it("unschedules on cross-block move but retains timing when reordering within a block", async () => {
+  const { scheduleTask } = await import("./repository");
+  const db = database();
+  const block = await createBlock(
+    {
+      title: "Work",
+      date: "2026-10-15",
+      start: "13:00",
+      end: "18:00",
+      timezone: "UTC",
+      color: "sage",
+      icon: "briefcase",
+    },
+    db,
+  );
+  await addTask("A", block, db);
+  await addTask("B", block, db);
+  const [a, b] = orderedTasks(await db.tasks.toArray());
+  await scheduleTask(
+    a.id,
+    block,
+    { offsetMinutes: 0, durationMinutes: 30 },
+    db,
+  );
+  await moveTask(a.id, block, b.id, db);
+  expect((await db.tasks.get(a.id))?.schedule).toBeDefined();
+  await moveTask(a.id, null, null, db);
+  expect((await db.tasks.get(a.id))?.schedule).toBeUndefined();
+});

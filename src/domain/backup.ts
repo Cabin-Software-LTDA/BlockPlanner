@@ -13,7 +13,7 @@ import { validateRange } from "./interactions";
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 export interface PlannerBackup {
   format: "timeblock";
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   data: {
     definitions: TimeBlockDefinition[];
@@ -121,9 +121,12 @@ function unique<T>(items: T[], key: (item: T) => string, label: string) {
 export function validateBackup(value: unknown): PlannerBackup {
   try {
     const root = record(value);
-    if (root.format !== "timeblock" || root.version !== 1)
+    if (
+      root.format !== "timeblock" ||
+      (root.version !== 1 && root.version !== 2)
+    )
       fail(
-        "unsupported format or version. Use a TimeBlock version 1 JSON backup.",
+        "unsupported format or version. Use a TimeBlock version 1 or 2 JSON backup.",
       );
     const data = record(root.data);
     const definitions = rows(data.definitions, (row): TimeBlockDefinition => {
@@ -204,6 +207,42 @@ export function validateBackup(value: unknown): PlannerBackup {
               "estimate",
             ),
           }),
+      ...(row.schedule === undefined
+        ? {}
+        : {
+            schedule: {
+              offsetMinutes: integer(
+                record(row.schedule).offsetMinutes,
+                0,
+                1500,
+                "task offset",
+              ),
+              durationMinutes: integer(
+                record(row.schedule).durationMinutes,
+                1,
+                1440,
+                "task duration",
+              ),
+            },
+          }),
+      ...(row.notesFormat === undefined
+        ? {}
+        : {
+            notesFormat: choice(
+              row.notesFormat,
+              ["markdown"] as const,
+              "notes format",
+            ),
+          }),
+      ...(row.checklist === undefined
+        ? {}
+        : {
+            checklist: rows(row.checklist, (item) => ({
+              id: text(item.id, "checklist ID"),
+              title: text(item.title, "checklist title"),
+              completed: boolean(item.completed),
+            })),
+          }),
       order: integer(row.order, 0, Number.MAX_SAFE_INTEGER, "task order"),
       createdAt: instant(row.createdAt),
     }));
@@ -276,9 +315,13 @@ export function validateBackup(value: unknown): PlannerBackup {
           fail("recurring occurrence and exception disagree.");
       }
     }
-    for (const task of tasks)
+    for (const task of tasks) {
+      unique(task.checklist ?? [], (item) => item.id, "checklist ID");
+      if (task.schedule && task.occurrenceId === null)
+        fail("scheduled task needs a block.");
       if (task.occurrenceId !== null && !occurrenceMap.has(task.occurrenceId))
         fail(`task ${task.id} references a missing block.`);
+    }
     for (const exception of exceptions) {
       if (
         !definitionMap.get(exception.definitionId)?.recurrence ||
@@ -301,7 +344,7 @@ export function validateBackup(value: unknown): PlannerBackup {
     }
     return {
       format: "timeblock",
-      version: 1,
+      version: root.version as 1 | 2,
       exportedAt: instant(root.exportedAt),
       data: {
         definitions,
