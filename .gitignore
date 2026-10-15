@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+# Local environment values; keep only the blank setup template.
+.env*
+!.env.example
+coverage/
+
+# Local agent workspace metadata
+.agents/
+.codex/

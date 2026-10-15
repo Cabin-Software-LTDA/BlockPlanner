@@ -1,0 +1,194 @@
+"use client";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragMoveEvent,
+} from "@dnd-kit/core";
+import type {
+  Task,
+  TimeBlockOccurrence,
+  UserPreferences,
+} from "@/domain/models";
+import {
+  adjustBlock,
+  PIXELS_PER_HOUR,
+  type BlockAction,
+} from "@/domain/interactions";
+import { adjustBlockTime, moveTask } from "@/lib/db/repository";
+import { TaskEditor } from "./task-editor";
+export type RunAction = (action: () => Promise<unknown>) => Promise<boolean>;
+type DragData =
+  | { kind: "task"; taskId: string }
+  | { kind: "block"; blockId: string; action: BlockAction };
+type Preview = { id: string; start: string; end: string };
+const InteractionContext = createContext<{
+  editTask: (id: string) => void;
+  preview: Preview | null;
+  busy: boolean;
+}>({ editTask: () => {}, preview: null, busy: false });
+export const usePlannerInteractions = () => useContext(InteractionContext);
+const collisionDetection: CollisionDetection = (args) => {
+  if (args.active.data.current?.kind !== "task") return [];
+  return pointerWithin(args)
+    .filter((hit) => hit.id !== args.active.id)
+    .sort((a, b) => {
+      const kind = (id: typeof a.id) =>
+        args.droppableContainers.find((c) => c.id === id)?.data.current?.kind;
+      return (
+        Number(kind(b.id) === "task-target") -
+        Number(kind(a.id) === "task-target")
+      );
+    });
+};
+export function PlannerInteractions({
+  children,
+  blocks,
+  tasks,
+  preferences,
+  run,
+}: {
+  children: ReactNode;
+  blocks: TimeBlockOccurrence[];
+  tasks: Task[];
+  preferences: UserPreferences;
+  run: RunAction;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+  const editing = tasks.find((t) => t.id === editingId);
+  function showPreview(event: DragMoveEvent) {
+    const data = event.active.data.current as DragData | undefined;
+    if (data?.kind !== "block") return;
+    const block = blocks.find((b) => b.id === data.blockId);
+    if (!block) return;
+    try {
+      setPreview({
+        id: block.id,
+        ...adjustBlock(
+          block,
+          data.action,
+          (event.delta.y * 60) / PIXELS_PER_HOUR,
+          preferences.increment,
+        ),
+      });
+    } catch {
+      setPreview(null);
+    }
+  }
+  return (
+    <InteractionContext.Provider
+      value={{ editTask: setEditingId, preview, busy }}
+    >
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        accessibility={{
+          announcements: {
+            onDragStart: ({ active }) => {
+              const data = active.data.current as DragData | undefined;
+              return data?.kind === "task"
+                ? `Picked up ${tasks.find((t) => t.id === data.taskId)?.title ?? "task"}.`
+                : `Adjusting ${blocks.find((b) => b.id === (data?.kind === "block" ? data.blockId : ""))?.title ?? "block"}.`;
+            },
+            onDragOver: ({ over }) => {
+              const target = over?.data.current;
+              if (!target) return "No task destination.";
+              if (target.kind === "task-target")
+                return `Insert before ${tasks.find((t) => t.id === target.taskId)?.title ?? "task"}.`;
+              return target.occurrenceId === null
+                ? "Move to Unscheduled."
+                : `Move to ${blocks.find((b) => b.id === target.occurrenceId)?.title ?? "block"}.`;
+            },
+            onDragEnd: () => "Drag ended.",
+            onDragCancel: () => "Drag cancelled. No changes saved.",
+          },
+          screenReaderInstructions: {
+            draggable:
+              "Pointer users can drag this handle. Keyboard users: use arrow keys on block handles to adjust time. Use task up and down buttons to reorder, or Edit task to move between blocks.",
+          },
+        }}
+        onDragStart={(event) => {
+          const data = event.active.data.current as DragData | undefined;
+          setDraggedTask(
+            data?.kind === "task"
+              ? (tasks.find((t) => t.id === data.taskId) ?? null)
+              : null,
+          );
+          setAnnouncement("");
+        }}
+        onDragMove={showPreview}
+        onDragCancel={() => {
+          setPreview(null);
+          setDraggedTask(null);
+          setAnnouncement("Drag cancelled.");
+        }}
+        onDragEnd={async (event) => {
+          const data = event.active.data.current as DragData | undefined;
+          setDraggedTask(null);
+          setBusy(true);
+          let ok = false;
+          if (data?.kind === "block" && event.delta.y !== 0) {
+            ok = await run(() =>
+              adjustBlockTime(
+                data.blockId,
+                data.action,
+                (event.delta.y * 60) / PIXELS_PER_HOUR,
+                preferences.increment,
+              ),
+            );
+          } else if (data?.kind === "task" && event.over) {
+            const target = event.over.data.current;
+            if (
+              target?.kind === "task-target" ||
+              target?.kind === "task-list"
+            ) {
+              ok = await run(() =>
+                moveTask(
+                  data.taskId,
+                  target.occurrenceId as string | null,
+                  target.kind === "task-target"
+                    ? (target.taskId as string)
+                    : null,
+                ),
+              );
+            }
+          }
+          setPreview(null);
+          setBusy(false);
+          setAnnouncement(ok ? "Saved." : "No changes saved.");
+        }}
+      >
+        {children}
+        <DragOverlay dropAnimation={null}>
+          {draggedTask && (
+            <div className="task-drag-preview">{draggedTask.title}</div>
+          )}
+        </DragOverlay>
+        <span className="sr-only" role="status">
+          {announcement}
+        </span>
+        {editing && (
+          <TaskEditor
+            key={editing.id}
+            task={editing}
+            blocks={blocks}
+            run={run}
+            close={() => setEditingId(null)}
+          />
+        )}
+      </DndContext>
+    </InteractionContext.Provider>
+  );
+}
