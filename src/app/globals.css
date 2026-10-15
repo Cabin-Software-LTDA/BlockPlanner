@@ -1897,3 +1897,54 @@ kbd {
 .timed-block .resize-end {
   bottom: 0;
 }
+.unified-meeting {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 5px;
+  pointer-events: auto;
+}
+.unified-meeting .icon-button {
+  min-width: 20px;
+  min-height: 20px;
+  padding: 2px;
+}
+.meeting-open {
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.unified-meeting .meeting-open {
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+}
+.meeting-open strong,
+.meeting-open small {
+  display: block;
+}
+.meeting-open strong {
+  font-size: 11px;
+}
+.meeting-open small {
+  font-size: 10px;
+  margin-top: 3px;
+}
+.meeting-lane-label {
+  position: absolute;
+  top: -20px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.meeting-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+.meeting-card.meeting-short .meeting-open {
+  display: block;
+}
+.unified-meeting.meeting-short > * { visibility: visible; }

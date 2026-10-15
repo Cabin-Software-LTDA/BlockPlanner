@@ -11,6 +11,8 @@ import {
   type DragMoveEvent,
 } from "@dnd-kit/core";
 import type {
+  ExternalCalendarEvent,
+  MeetingPlacement,
   Task,
   TimeBlockOccurrence,
   UserPreferences,
@@ -22,21 +24,43 @@ import {
 } from "@/domain/interactions";
 import { adjustBlockTime, moveTask, scheduleTask } from "@/lib/db/repository";
 import { taskRange, scheduleAtMinute } from "@/domain/task-schedule";
-import { meetingLabel } from "@/domain/calendar";
+import { meetingOwner, meetingLabel } from "@/domain/calendar";
+import { assignMeeting } from "@/lib/db/calendar";
+import { MeetingDialog } from "./meeting-card";
 import { TaskEditor } from "./task-editor";
 export type RunAction = (action: () => Promise<unknown>) => Promise<boolean>;
 type DragData =
+  | { kind: "meeting"; eventId: string }
   | { kind: "task"; taskId: string; scheduled?: boolean }
   | { kind: "block"; blockId: string; action: BlockAction };
 type Preview = { id: string; start: string; end: string };
 const InteractionContext = createContext<{
+  openMeeting: (id: string) => void;
+  ownerOf: (event: ExternalCalendarEvent) => string | null;
   editTask: (id: string) => void;
   preview: Preview | null;
   busy: boolean;
   taskTiming: (task: Task) => string;
-}>({ editTask: () => {}, preview: null, busy: false, taskTiming: () => "" });
+}>({
+  openMeeting: () => {},
+  ownerOf: () => null,
+  editTask: () => {},
+  preview: null,
+  busy: false,
+  taskTiming: () => "",
+});
 export const usePlannerInteractions = () => useContext(InteractionContext);
 const collisionDetection: CollisionDetection = (args) => {
+  if (args.active.data.current?.kind === "meeting")
+    return pointerWithin(args).filter((hit) => {
+      const data = args.droppableContainers.find((c) => c.id === hit.id)?.data
+        .current;
+      return (
+        data?.kind === "meeting-outside" ||
+        data?.kind === "task-time" ||
+        String(hit.id).startsWith("block-list:")
+      );
+    });
   if (args.active.data.current?.kind !== "task") return [];
   return pointerWithin(args)
     .filter((hit) => hit.id !== args.active.id)
@@ -51,17 +75,27 @@ const collisionDetection: CollisionDetection = (args) => {
 };
 export function PlannerInteractions({
   children,
+  events,
+  placements,
   blocks,
   tasks,
   preferences,
   run,
 }: {
   children: ReactNode;
+  events: ExternalCalendarEvent[];
+  placements: MeetingPlacement[];
   blocks: TimeBlockOccurrence[];
   tasks: Task[];
   preferences: UserPreferences;
   run: RunAction;
 }) {
+  const [meetingId, setMeetingId] = useState<string | null>(null);
+  const [draggedMeeting, setDraggedMeeting] =
+    useState<ExternalCalendarEvent | null>(null);
+  const ownerOf = (event: ExternalCalendarEvent) =>
+    meetingOwner(event, blocks, placements);
+  const selectedMeeting = events.find((e) => e.id === meetingId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
@@ -93,6 +127,8 @@ export function PlannerInteractions({
   return (
     <InteractionContext.Provider
       value={{
+        openMeeting: setMeetingId,
+        ownerOf,
         editTask: setEditingId,
         preview,
         busy,
@@ -112,12 +148,16 @@ export function PlannerInteractions({
           announcements: {
             onDragStart: ({ active }) => {
               const data = active.data.current as DragData | undefined;
+              if (data?.kind === "meeting")
+                return "Assigning meeting. Its time will not change.";
               return data?.kind === "task"
                 ? `Picked up ${tasks.find((t) => t.id === data.taskId)?.title ?? "task"}.`
                 : `Adjusting ${blocks.find((b) => b.id === (data?.kind === "block" ? data.blockId : ""))?.title ?? "block"}.`;
             },
             onDragOver: ({ over }) => {
               const target = over?.data.current;
+              if (target?.kind === "meeting-outside")
+                return "Show meeting outside blocks at its original time.";
               if (!target) return "No task destination.";
               if (target.kind === "task-target")
                 return `Insert before ${tasks.find((t) => t.id === target.taskId)?.title ?? "task"}.`;
@@ -135,6 +175,11 @@ export function PlannerInteractions({
         }}
         onDragStart={(event) => {
           const data = event.active.data.current as DragData | undefined;
+          setDraggedMeeting(
+            data?.kind === "meeting"
+              ? (events.find((e) => e.id === data.eventId) ?? null)
+              : null,
+          );
           setDraggedTask(
             data?.kind === "task"
               ? (tasks.find((t) => t.id === data.taskId) ?? null)
@@ -145,15 +190,28 @@ export function PlannerInteractions({
         onDragMove={showPreview}
         onDragCancel={() => {
           setPreview(null);
+          setDraggedMeeting(null);
           setDraggedTask(null);
           setAnnouncement("Drag cancelled.");
         }}
         onDragEnd={async (event) => {
           const data = event.active.data.current as DragData | undefined;
           setDraggedTask(null);
+          setDraggedMeeting(null);
           setBusy(true);
           let ok = false;
-          if (data?.kind === "block" && event.delta.y !== 0) {
+          if (data?.kind === "meeting" && event.over) {
+            const target = event.over.data.current;
+            if (target?.kind === "meeting-outside" || target?.occurrenceId)
+              ok = await run(() =>
+                assignMeeting(
+                  data.eventId,
+                  target.kind === "meeting-outside"
+                    ? null
+                    : target.occurrenceId,
+                ),
+              );
+          } else if (data?.kind === "block" && event.delta.y !== 0) {
             ok = await run(() =>
               adjustBlockTime(
                 data.blockId,
@@ -214,6 +272,15 @@ export function PlannerInteractions({
       >
         {children}
         <DragOverlay dropAnimation={null}>
+          {draggedMeeting && (
+            <div className="task-drag-preview">
+              {draggedMeeting.title}
+              <small>
+                Time locked ·{" "}
+                {meetingLabel(draggedMeeting, preferences.timezone)}
+              </small>
+            </div>
+          )}
           {draggedTask && (
             <div className="task-drag-preview">{draggedTask.title}</div>
           )}
@@ -221,6 +288,16 @@ export function PlannerInteractions({
         <span className="sr-only" role="status">
           {announcement}
         </span>
+        {selectedMeeting && (
+          <MeetingDialog
+            event={selectedMeeting}
+            blocks={blocks}
+            owner={ownerOf(selectedMeeting)}
+            timezone={preferences.timezone}
+            run={run}
+            close={() => setMeetingId(null)}
+          />
+        )}
         {editing && (
           <TaskEditor
             key={editing.id}

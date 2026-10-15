@@ -56,3 +56,48 @@ export function safeEventUrl(value?: string) {
     return undefined;
   }
 }
+
+export function containsMeeting(
+  event: ExternalCalendarEvent,
+  block: TimeBlockOccurrence,
+) {
+  return (
+    !event.allDay &&
+    Date.parse(block.start) <= Date.parse(event.start) &&
+    Date.parse(block.end) >= Date.parse(event.end)
+  );
+}
+/** One owner only: explicit choice, otherwise shortest containing block, then start/ID. */
+export function meetingOwner(
+  event: ExternalCalendarEvent,
+  blocks: TimeBlockOccurrence[],
+  placements: import("./models").MeetingPlacement[],
+) {
+  const choice = placements.find((p) => p.id === event.id);
+  if (choice)
+    return (
+      blocks.find(
+        (b) => b.id === choice.occurrenceId && containsMeeting(event, b),
+      )?.id ?? null
+    );
+  return (
+    blocks
+      .filter((b) => containsMeeting(event, b))
+      .sort(
+        (a, b) =>
+          Date.parse(a.end) -
+            Date.parse(a.start) -
+            (Date.parse(b.end) - Date.parse(b.start)) ||
+          a.start.localeCompare(b.start) ||
+          a.id.localeCompare(b.id),
+      )[0]?.id ?? null
+  );
+}
+export function safeMeetingUrl(value?: string) {
+  try {
+    const url = new URL(value ?? "");
+    return url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}

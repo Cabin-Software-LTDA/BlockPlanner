@@ -2,7 +2,7 @@ import type {
   CalendarConnection,
   ExternalCalendarEvent,
 } from "@/domain/models";
-import { eventOnDay } from "../../domain/calendar";
+import { containsMeeting, eventOnDay } from "../../domain/calendar";
 import { db, type TimeBlockDB } from "./database";
 export const rangeKey = (date: string, timezone: string) =>
   `${date}@${timezone}`;
@@ -15,10 +15,14 @@ export async function saveConnection(
     "rw",
     database.connections,
     database.events,
+    database.meetingPlacements,
     async () => {
       const existing = await database.connections.get(connection.id);
       if (!isCurrent()) return;
       await database.connections.clear();
+      await database.meetingPlacements
+        .filter((p) => p.connectionId !== connection.id)
+        .delete();
       await database.events
         .filter(
           (event) =>
@@ -113,9 +117,46 @@ export async function disconnectCalendar(database: TimeBlockDB = db) {
     "rw",
     database.connections,
     database.events,
+    database.meetingPlacements,
     async () => {
       await database.connections.clear();
       await database.events.clear();
+      await database.meetingPlacements.clear();
+    },
+  );
+}
+
+/** A local visual assignment. Never writes to the Calendar API or event timestamps. */
+export async function assignMeeting(
+  eventId: string,
+  occurrenceId: string | null,
+  database: TimeBlockDB = db,
+) {
+  await database.transaction(
+    "rw",
+    database.events,
+    database.occurrences,
+    database.meetingPlacements,
+    async () => {
+      const event = await database.events.get(eventId);
+      if (!event)
+        throw new Error(
+          "This meeting is no longer cached. Refresh Calendar and retry.",
+        );
+      if (event.allDay)
+        throw new Error("All-day events cannot be placed inside timed blocks.");
+      if (occurrenceId !== null) {
+        const block = await database.occurrences.get(occurrenceId);
+        if (!block || !containsMeeting(event, block))
+          throw new Error(
+            "Choose a block that contains the meeting’s entire time range. Google Calendar times cannot be changed here.",
+          );
+      }
+      await database.meetingPlacements.put({
+        id: event.id,
+        connectionId: event.connectionId,
+        occurrenceId,
+      });
     },
   );
 }

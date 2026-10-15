@@ -107,3 +107,69 @@ describe("meeting association", () => {
     ).toContain("eid=1");
   });
 });
+
+it("chooses exactly one containing block and respects explicit outside/invalidated choices", async () => {
+  const { meetingOwner, containsMeeting } = await import("./calendar");
+  const wide = block("wide", "2026-10-15T08:00:00Z", "2026-10-15T18:00:00Z");
+  const exact = block("exact", event.start, event.end);
+  const partial = block("partial", event.start, "2026-10-15T10:00:00Z");
+  expect(meetingOwner(event, [wide, partial, exact], [])).toBe("exact");
+  expect(meetingOwner(event, [partial], [])).toBeNull();
+  expect(containsMeeting(event, partial)).toBe(false);
+  expect(
+    meetingOwner(
+      event,
+      [wide, exact],
+      [{ id: event.id, connectionId: event.connectionId, occurrenceId: null }],
+    ),
+  ).toBeNull();
+  expect(
+    meetingOwner(
+      event,
+      [wide, exact],
+      [
+        {
+          id: event.id,
+          connectionId: event.connectionId,
+          occurrenceId: "wide",
+        },
+      ],
+    ),
+  ).toBe("wide");
+  expect(
+    meetingOwner(
+      event,
+      [wide],
+      [
+        {
+          id: event.id,
+          connectionId: event.connectionId,
+          occurrenceId: "deleted",
+        },
+      ],
+    ),
+  ).toBeNull();
+});
+it("uses stable ties, actual instants overnight, and rejects unsafe meeting links", async () => {
+  const { meetingOwner, safeMeetingUrl } = await import("./calendar");
+  const a = block("a", event.start, event.end),
+    b = { ...a, id: "b" };
+  expect(meetingOwner(event, [b, a], [])).toBe("a");
+  const overnight = {
+    ...event,
+    start: "2026-10-15T23:00:00Z",
+    end: "2026-10-16T01:00:00Z",
+  };
+  expect(
+    meetingOwner(
+      overnight,
+      [block("night", overnight.start, overnight.end)],
+      [],
+    ),
+  ).toBe("night");
+  expect(meetingOwner({ ...event, allDay: true }, [a], [])).toBeNull();
+  expect(safeMeetingUrl("javascript:alert(1)")).toBeUndefined();
+  expect(safeMeetingUrl("https://meet.google.com/abc-defg-hij")).toBe(
+    "https://meet.google.com/abc-defg-hij",
+  );
+});

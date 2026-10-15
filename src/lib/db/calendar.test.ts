@@ -143,3 +143,64 @@ it("preserves the same account's offline cache when reconnecting", async () => {
     (await db.connections.get(connection.id))?.syncedRanges?.["2026-10-15@UTC"],
   ).toBeTruthy();
 });
+
+it("persists local assignment across refresh/reopen without changing meeting times, and rejects invalid blocks", async () => {
+  const { assignMeeting } = await import("./calendar");
+  const { createBlock } = await import("./repository");
+  const db = database();
+  await saveConnection(connection, db);
+  await cacheDay(connection, "2026-10-15", "UTC", [event], () => true, db);
+  const blockId = await createBlock(
+    {
+      title: "Work",
+      date: "2026-10-15",
+      start: "08:00",
+      end: "12:00",
+      timezone: "UTC",
+      color: "sage",
+      icon: "briefcase",
+    },
+    db,
+  );
+  const short = await createBlock(
+    {
+      title: "Too short",
+      date: "2026-10-15",
+      start: "09:30",
+      end: "10:00",
+      timezone: "UTC",
+      color: "sage",
+      icon: "briefcase",
+    },
+    db,
+  );
+  await assignMeeting(event.id, blockId, db);
+  await expect(assignMeeting(event.id, short, db)).rejects.toThrow(
+    "entire time range",
+  );
+  expect((await db.meetingPlacements.get(event.id))?.occurrenceId).toBe(
+    blockId,
+  );
+  await cacheDay(
+    connection,
+    "2026-10-15",
+    "UTC",
+    [{ ...event, title: "Refreshed" }],
+    () => true,
+    db,
+  );
+  db.close();
+  await db.open();
+  expect((await db.meetingPlacements.get(event.id))?.occurrenceId).toBe(
+    blockId,
+  );
+  expect(await db.events.get(event.id)).toMatchObject({
+    start: event.start,
+    end: event.end,
+    title: "Refreshed",
+  });
+  await assignMeeting(event.id, null, db);
+  expect((await db.meetingPlacements.get(event.id))?.occurrenceId).toBeNull();
+  await disconnectCalendar(db);
+  expect(await db.meetingPlacements.count()).toBe(0);
+});

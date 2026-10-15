@@ -1,6 +1,6 @@
 import { Temporal } from "@js-temporal/polyfill";
 import type { ExternalCalendarEvent } from "@/domain/models";
-import { dayRange, safeEventUrl } from "../../domain/calendar";
+import { dayRange, safeEventUrl, safeMeetingUrl } from "../../domain/calendar";
 export interface GoogleCalendar {
   id: string;
   summary?: string;
@@ -11,6 +11,7 @@ export interface GoogleEvent {
   status?: string;
   summary?: string;
   htmlLink?: string;
+  hangoutLink?: string;
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
 }
@@ -103,6 +104,7 @@ export function normalizeEvent(
     end,
     allDay,
     sourceUrl: safeEventUrl(item.htmlLink),
+    meetingUrl: safeMeetingUrl(item.hangoutLink),
   };
 }
 export async function fetchDay(
@@ -132,7 +134,8 @@ export async function fetchDay(
           orderBy: "startTime",
           maxResults: "2500",
           timeZone: timezone,
-          fields: "items(id,status,summary,start,end,htmlLink),nextPageToken",
+          fields:
+            "items(id,status,summary,start,end,htmlLink,hangoutLink),nextPageToken",
         },
         token,
         signal,

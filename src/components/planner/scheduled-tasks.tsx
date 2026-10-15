@@ -17,6 +17,7 @@ import {
 import { PIXELS_PER_HOUR } from "@/domain/interactions";
 import { db } from "@/lib/db/database";
 import { scheduleTask } from "@/lib/db/repository";
+import { MeetingCard } from "./meeting-card";
 import { TaskProgress } from "./task-progress";
 import { usePlannerInteractions, type RunAction } from "./planner-interactions";
 function ScheduledTask({
@@ -182,19 +183,13 @@ export function ScheduledTasks({
             run={run}
           />
         ) : (
-          <div
+          <MeetingCard
             key={item.id}
-            className="scheduled-meeting"
+            event={item.meeting!}
+            timezone={preferences.timezone}
             style={style}
-            title={`${item.meeting!.title} · ${timeLabel(item.meeting!.start, preferences.timezone)}–${timeLabel(item.meeting!.end, preferences.timezone)}`}
-          >
-            <strong>{item.meeting!.title}</strong>
-            <small>
-              {timeLabel(item.meeting!.start, preferences.timezone)}–
-              {timeLabel(item.meeting!.end, preferences.timezone)} · Google
-              Calendar
-            </small>
-          </div>
+            className="scheduled-meeting"
+          />
         );
       })}
     </div>

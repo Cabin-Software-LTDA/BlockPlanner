@@ -27,7 +27,6 @@ import { ScheduledTasks } from "./scheduled-tasks";
 import { hasClockChange } from "@/domain/calendar";
 import { taskFits } from "@/domain/task-schedule";
 import { TaskList } from "./task-list";
-import { BlockMeetings } from "./calendar-meetings";
 const icons = {
   book: BookOpen,
   briefcase: BriefcaseBusiness,
@@ -128,6 +127,8 @@ export function TimelineBlock({
   open: () => void;
   run: RunAction;
 }) {
+  const { ownerOf } = usePlannerInteractions();
+  meetings = meetings.filter((event) => ownerOf(event) === block.id);
   const hasTimedItems =
     tasks.some((t) => t.schedule && taskFits(t, block)) ||
     meetings.some((m) => !m.allDay);
@@ -233,11 +234,6 @@ export function TimelineBlock({
             )}
           </button>
         </div>
-        <BlockMeetings
-          events={clockChange ? meetings : meetings.filter((m) => m.allDay)}
-          block={{ ...block, ...range }}
-          timezone={preferences.timezone}
-        />
         {tasks.some((t) => !taskFits(t, block)) && (
           <p className="form-error">
             Some tasks no longer fit. Edit their timing below.

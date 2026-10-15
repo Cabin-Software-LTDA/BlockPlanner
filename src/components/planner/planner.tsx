@@ -78,6 +78,7 @@ export default function Planner() {
           db.exceptions,
           db.occurrences,
           db.tasks,
+          db.meetingPlacements,
         ],
         async () => ({
           preferences: await db.preferences.get("user"),
@@ -85,6 +86,7 @@ export default function Planner() {
           exceptions: await db.exceptions.toArray(),
           blocks: await db.occurrences.toArray(),
           tasks: await db.tasks.toArray(),
+          placements: await db.meetingPlacements.toArray(),
         }),
       ),
     [],
@@ -180,6 +182,8 @@ export default function Planner() {
       />
 
       <PlannerInteractions
+        events={calendar.events}
+        placements={data.placements}
         blocks={blocks}
         tasks={tasks}
         preferences={preferences}
@@ -542,6 +546,7 @@ export default function Planner() {
           </div>
           <CalendarAgenda
             calendar={calendar}
+            listView={viewMode === "list"}
             date={date}
             preferences={preferences}
             blocks={blocks}

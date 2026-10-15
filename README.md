@@ -27,7 +27,7 @@ In the browser: create a block, add and complete a task, reload, and confirm bot
 
 - Next.js App Router, strict TypeScript, Tailwind, Lucide, Dexie, Zustand.
 - Responsive shell, mini calendar, date navigation, light/dark mode, current-time indicator.
-- Separate domain models, versioned IndexedDB schema (v3 preserves v1/v2 data), transactional block creation.
+- Separate domain models, versioned IndexedDB schema (v4 preserves v1–v3 data), transactional block creation.
 - Block creation, date/time editing, deletion, overlap lanes, overnight clipping, and explicit 24-hour intervals.
 - dnd-kit move and top/bottom resize handles, snapped previews, and arrow-key equivalents.
 - Tasks: add, edit, complete, delete, notes, optional minute estimates, drag reordering, and moves between blocks/inbox.
@@ -76,7 +76,7 @@ Limits: blocks are 15 minutes to 24 wall-clock hours. Resize enforces at least t
 
 See [architecture](docs/architecture.md) for relationships, edge cases, and milestone sequence.
 
-Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 86 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
+Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 89 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
 
 ## Phase 4 Google Calendar setup and verification
 
@@ -85,7 +85,7 @@ Browser smoke checks cover block/task workflows and recurring occurrence generat
 3. Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to the public client ID, then restart Next.js. The supplied client ID has already been configured locally in this workspace; `.env.local` is ignored by Git. Never add a client secret.
 4. Open the app in a normal external browser. Select **Load Google sign-in**, then **Connect Google** and complete Google's consent screen. The first button loads the third-party library only on request; the second opens the popup synchronously from a user gesture. Embedded browsers may not support the popup or Google authorization. Allow popups for this origin.
 5. Grant `calendar.calendarlist.readonly` and `calendar.events.readonly`. Select calendars in the sidebar. Navigation refreshes the visible day while the session is authorized; **Refresh** fetches it again. No write scope, event creation, task conversion, or automatic schedule changes exist. [Google scope definitions](https://developers.google.com/workspace/calendar/api/auth).
-6. Verify a meeting crossing two blocks appears in both, with its original full range. The calendar lane places it once at its actual time; overlapping meetings occupy separate columns. All-day events use date ranges with exclusive ends, displayed above the timeline. Meetings outside visible hours and all exact ranges remain accessible in **Meeting details**. Meetings shorter than 15 minutes render a proportional marker; use the details list for their content.
+6. Verify each meeting appears once: in a containing block, or outside if no single block contains its entire range. Overlapping meetings occupy separate columns. Click the meeting to view its full time range and links. All-day events use date ranges with exclusive ends, displayed above the timeline. Meetings outside visible hours and all exact ranges remain accessible in the meeting’s details dialog. Meetings shorter than 15 minutes render a proportional marker; use the details list for their content.
 7. Reload: cached meetings remain, but a fresh session requires **Reconnect Google**. Tokens are kept only in memory and expire; there is no silent/background refresh token. After reconnecting, try changing a Google event outside TimeBlock and refreshing; deleted/moved events disappear from the refreshed day. A failed or partial fetch preserves the previous cache.
 8. **Disconnect** deletes calendar metadata and cached events, preserving blocks/tasks. It attempts Google permission revocation when a valid access token is available. If revocation cannot be confirmed, the UI links to [Google Account connections](https://myaccount.google.com/connections) for manual removal.
 
@@ -97,7 +97,7 @@ Use the same hostname/port as your original planner to retain that origin's Inde
 
 ## Phase 5: backup and usability checks
 
-- Open **Backup and restore** in the sidebar (under **Planning tools** on mobile). Download JSON, select that file again, inspect the counts/timezone, acknowledge replacement, and restore. The UI does not write anything until the restore button is activated. TimeBlock format version 1 or 2 JSON up to 20 MB is accepted; this format version is separate from IndexedDB schema version 3.
+- Open **Backup and restore** in the sidebar (under **Planning tools** on mobile). Download JSON, select that file again, inspect the counts/timezone, acknowledge replacement, and restore. The UI does not write anything until the restore button is activated. TimeBlock format version 1 or 2 JSON up to 20 MB is accepted; this format version is separate from IndexedDB schema version 4.
 - A restore replaces blocks, definitions, tasks, exceptions, preferences and daily layouts. It preserves IDs, task notes, completion and recurrence identity. It excludes Google connection metadata, cached meetings and credentials; existing calendar data stays unchanged.
 - The previous planner is saved inside the same transaction as the replacement. **Restore recovery copy** swaps the current planner and the saved copy, so intervening edits remain recoverable. A subsequent file restore replaces the recovery slot with the workspace that existed immediately before that restore. Download the recovery copy if you need to retain it independently.
 - Invalid formats, duplicate IDs, orphan references, invalid recurrence exceptions, malformed dates/timezones and invalid ranges fail before writing. A storage failure rolls back both the replacement and the recovery snapshot.
@@ -106,7 +106,7 @@ Use the same hostname/port as your original planner to retain that origin's Inde
 - On a narrow screen, **Planning tools** expands the calendar, routines, inbox, backup controls and theme switch. **Day list** shows all blocks intersecting the day, including blocks outside the configured timeline hours. Timeline remains the default and scrolls horizontally inside its own region when calendar lanes need space.
 - **View settings → Display timezone** changes the view and the default for new blocks. It never moves existing blocks or changes routine definitions. The day list uses full dates and UTC offsets to make overnight/timezone boundaries explicit.
 
-Verification: 86 automated tests, strict TypeScript and production build. Browser smoke tests verified actual JSON download/file selection, restore preview and acknowledgement, replacement/recovery, preserved task notes/completion, keyboard new-block, typing suppression, inline validation, Escape/focus restoration, and a 390px day-list layout without page overflow. Physical touch hardware and a full assistive-technology audit remain outstanding. This app still requires a reachable server for a fresh page launch; it does not install a service worker.
+Verification: 89 automated tests, strict TypeScript and production build. Browser smoke tests verified actual JSON download/file selection, restore preview and acknowledgement, replacement/recovery, preserved task notes/completion, keyboard new-block, typing suppression, inline validation, Escape/focus restoration, and a 390px day-list layout without page overflow. Physical touch hardware and a full assistive-technology audit remain outstanding. This app still requires a reachable server for a fresh page launch; it does not install a service worker.
 
 ## Vercel deployment
 
@@ -129,3 +129,14 @@ Because `.env.local` is intentionally ignored, add `NEXT_PUBLIC_GOOGLE_CLIENT_ID
 - IndexedDB stays at schema v3: these are optional non-indexed fields, so no destructive migration is necessary. New JSON backups use format v2, preserving schedules, checklist IDs/status, and Markdown. Legacy v1 backups remain readable; old app versions reject v2 rather than silently discarding these fields.
 
 Validation: 86 automated tests cover overnight placement, DST rejection, persistence after reopening, drag scheduling bounds, checklist progress, rescue semantics, legacy backups and v2 round trips. Browser checks cover timed card placement, pointer drag, keyboard movement, checklist persistence, and Markdown-to-rich-text rendering. Live Google authorization remains dependent on your Google Cloud configuration.
+
+
+## Single meeting cards and local assignment
+
+Each timed meeting renders once. By default, the shortest block containing the full meeting owns the card (ties: earliest start, then stable block ID). A meeting spanning multiple blocks stays outside so its actual duration is never clipped to a partial block.
+
+Click a meeting to open its exact dates/timezone offsets, Google Calendar link, and Google Meet join link when supplied. Drag its grip to **Outside blocks** or to a block containing the entire meeting. Only the local assignment changes: Google event times and task schedules are never modified. The details dialog's **Show meeting in** selector provides the same action without dragging. Invalid drops leave the old assignment intact.
+
+Assignments persist in the additive IndexedDB v4 `meetingPlacements` table, keyed by the full external event identity. Calendar refresh cannot overwrite them. If a block is deleted, shortened, or no longer contains an externally rescheduled event, the card falls back outside. Switching Google accounts clears the previous account's assignments; disconnect clears all assignments. Like cached calendar data, assignments are not included in planner JSON backups.
+
+Validation: 89 tests plus browser checks on an isolated origin: single rendering, details/links, drag outside, drag to another containing block, invalid destination rejection, and persistence after reload. New join links appear after refreshing the calendar.

@@ -69,6 +69,7 @@ export interface ExternalCalendarEvent {
   end: string;
   allDay: boolean; // When true, start/end are ISO dates (exclusive end), never instants.
   sourceUrl?: string;
+  meetingUrl?: string;
 }
 export interface UserPreferences {
   id: "user";
@@ -82,4 +83,10 @@ export interface DailyLayout {
   date: LocalDate;
   visibleStart?: number;
   visibleEnd?: number;
+}
+
+export interface MeetingPlacement {
+  id: string; // Stable external event identity, including account/calendar.
+  connectionId: string;
+  occurrenceId: string | null; // null explicitly keeps the meeting outside blocks.
 }

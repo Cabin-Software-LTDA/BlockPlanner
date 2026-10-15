@@ -116,3 +116,10 @@ A task's optional checklist has stable item IDs and independent completion flags
 The optional `notesFormat: "markdown"` distinguishes rich notes from existing literal plain text. Tiptap loads only when task details open, renders supported rich text, and serializes Markdown; raw HTML is not directly injected into React. Notes remain local to the task, not part of a Google event. Draft edits commit with Save task and are discarded when the dialog closes. No editor service or backend is involved.
 
 Optional non-indexed task fields do not require a Dexie schema upgrade. Backup format v2 preserves these fields; v1 is accepted for legacy imports. Older clients reject v2, preventing silent field loss. Validation rejects invalid schedules, schedules without a parent block, and duplicate checklist identities before restore.
+
+
+## Single-owner calendar presentation
+
+`meetingOwner` resolves one visual owner independently of external event identity. Explicit `MeetingPlacement` choices take priority, including `null` for Outside blocks. Invalid explicit assignments fall back outside. Without a choice, select the shortest fully containing occurrence, then earliest start and stable ID. Partial intersections still describe overlap, but never create extra cards. Meetings spanning several blocks remain outside unless one occurrence contains their full range.
+
+Dexie v4 adds `meetingPlacements` without altering existing tables. Assignment writes validate the cached event and destination occurrence in the same transaction; neither timestamps nor Google data is mutated. The table is separate from refreshable event cache and survives event refresh. Account switching/disconnection clears the appropriate assignments. Calendar metadata, including these assignments, remains outside planner backups. The details dialog and drag/drop use the same validation path; expired/missing event identities fail without changing assignment.
