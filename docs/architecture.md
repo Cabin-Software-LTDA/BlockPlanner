@@ -6,7 +6,7 @@
 2. **Core planner — implemented:** dnd-kit drag/reposition/resize with keyboard equivalents, task edit/reorder/transfer, notes/estimates, dense-block details. The task editor uses native `<dialog>` for modal focus containment and Escape; no additional overlay dependency is needed.
 3. **Routines — implemented:** daily/selected-weekday definitions, bounded deterministic materialization, exceptions, occurrence/series editing, block presets, skip/restore and reset. Task-template cloning remains deferred.
 4. **Calendar — implemented, live OAuth verification pending:** Google Identity Services browser token flow, selected calendars, paginated event retrieval, local event cache, read-only meeting visualization and disconnect. Tokens exist only in memory.
-5. **Polish:** validated transactional JSON backup/restore, keyboard shortcuts, accessibility audit, responsive density, offline shell caching and additional integration tests.
+5. **Polish — implemented milestone:** validated transactional JSON backup/recovery, modifier-key shortcuts, native modal focus management, mobile planning tools/day list, display timezone settings, indexed task lookups and additional integration tests. Offline shell caching, full assistive-technology/native touch validation and live Google consent verification remain outstanding.
 
 Keep the app runnable at each step. No scheduling automation, analytics, accounts, or backend in the local MVP.
 
@@ -49,7 +49,7 @@ DST limitation: the foundation rejects ambiguous inputs but does not yet render 
 
 Version 1 stores definitions, occurrences, tasks, exceptions, connections, events, preferences and daily layouts. UUIDs are stable; datetimes serialize as ISO UTC strings. Transactions cover dependent writes and task preservation during deletion. React reads through live queries.
 
-Never edit/remove an already released schema version. Add `version(n).stores(...).upgrade(...)` for future changes; transform records transactionally, test upgrades from old fixtures, and avoid destructive resets. Export/import will have its own format version, runtime validation, reference checks, preview and a transaction. Backup/restore is not yet present.
+Never edit/remove an already released schema version. Add `version(n).stores(...).upgrade(...)` for future changes; transform records transactionally, test upgrades from old fixtures, and avoid destructive resets. Export/import will have its own format version, runtime validation, reference checks, preview and a transaction. Phase 5 adds a separately versioned backup format and a transactional restore/recovery workflow.
 
 ## Validation record
 
@@ -90,3 +90,19 @@ The REST adapter uses Authorization headers, omits cookies, uses `cache: no-stor
 Schema v2 replaces the old unique calendar/event index with a connection/calendar/event index without deleting records. Upgrade tests start with v1 data and confirm event/task preservation. Existing tables and version 1 declarations remain unchanged.
 
 Validation: 66 tests, covering OAuth scope checks/expiry/cancellation/timeouts/revocation, paginated API access and failures, instance identities, all-day/overnight/DST behavior, multi-block associations, stale refresh rejection, cache persistence/replacement/account switching and v1 migration. Browser fixture checks verify overlap lanes, matching block entries, all-day display and short-event access. Real GIS script loading passed; live OAuth consent and fetching await external-browser verification (the embedded browser did not expose its popup). See README for Google Cloud configuration and manual checks.
+
+## Phase 5 backup and interaction polish
+
+`domain/backup.ts` validates an unknown JSON value into fresh, explicitly selected fields. The format is `{format: "timeblock", version: 1, exportedAt, data}`. Six planner tables are included; external meetings, connection identities, OAuth state and recovery snapshots are excluded from portable exports. Validation checks types/enums, temporal values, ranges, unique primary/compound keys, foreign keys and routine occurrence/exception identity. Unknown fields are discarded rather than copied into storage. File imports are bounded to 20 MB and unsupported versions fail explicitly.
+
+`lib/db/backup.ts` reads all planner tables under one transaction for a consistent export. Restore revalidates at the write boundary, snapshots the current planner, then replaces the six tables and writes the single recovery slot in one transaction. Failures roll everything back. Recovery swaps current/saved snapshots rather than deleting intervening changes. The new `recovery` table is added in schema v3; v1/v2 definitions are untouched. Tests cover migrations and deliberately fail a write after table clearing to verify rollback. Recovery is not an independent backup: browser eviction removes it with other local data.
+
+`BackupDialog` exposes export, local file parsing, a review of counts/date/timezone, explicit replacement acknowledgement, recovery download and recovery restore. File reads never upload to a server. The acknowledgement controls the browser workflow; repository operations are independently validated and transactional. No merge mode is offered because ID conflicts and series reconciliation need explicit product semantics.
+
+`EditorPanel` and the task editor use a shared native-dialog focus lifecycle. Native modal behavior keeps background controls inert and supports nested task editing. Focus returns to the triggering control, with the main planner as fallback when that control no longer exists. Editor errors are visible inside the active modal. Modifier-key shortcuts pause while any dialog is open or the user is editing text. This avoids accidental scheduling during form entry.
+
+`plannerView` derives definition/task indexes and day/viewport block sets in one linear pass, replacing repeated task × block scans in rendering. The existing source data remains in Dexie; the derived indexes are memoized, not a second durable store. Planner reads use a read transaction so a restore cannot briefly expose mismatched tables. Restoring explicitly retries recurrence materialization even when definitions are unchanged. No virtualization or worker was added without evidence of a need.
+
+On small screens, planning tools are collapsed by default and a day-list alternative provides full-width task/block controls. The timeline remains primary. The day list includes all blocks intersecting the selected date, while timeline visible hours still control spatial placement. Native dialogs fit the viewport, important icon controls have accessible names, muted text contrast is improved, and reduced-motion preferences remain respected. Display timezone changes affect rendering and defaults only, never existing routine/block instants.
+
+Validation record: 78 passing tests plus strict TypeScript/production build. Browser checks include download + reselect, preview/acknowledgement, restore/recovery, note/completion preservation, modal focus/Escape, modified shortcuts and suppression, and 390px responsive layout. The Vercel fix is independently committed/pushed as `c17c379`; `vercel.json` selects the Next.js framework and `.next` output so an erroneous `public` dashboard override does not control the next build. Live Vercel deployment and Google consent remain user-environment checks.

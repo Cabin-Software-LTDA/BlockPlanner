@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
+import type { RecoverySnapshot } from "../../domain/backup";
 import type {
   CalendarConnection,
   DailyLayout,
@@ -10,6 +11,7 @@ import type {
   UserPreferences,
 } from "../../domain/models";
 export class TimeBlockDB extends Dexie {
+  recovery!: EntityTable<RecoverySnapshot, "id">;
   definitions!: EntityTable<TimeBlockDefinition, "id">;
   occurrences!: EntityTable<TimeBlockOccurrence, "id">;
   tasks!: EntityTable<Task, "id">;
@@ -34,6 +36,7 @@ export class TimeBlockDB extends Dexie {
       events:
         "id, connectionId, &[connectionId+calendarId+externalId], start, end",
     });
+    this.version(3).stores({ recovery: "id" });
   }
 }
 export const db = new TimeBlockDB();

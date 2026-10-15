@@ -31,7 +31,10 @@ export function hasClockChange(date: string, timezone: string) {
   const range = dayRange(date, timezone);
   return Date.parse(range.end) - Date.parse(range.start) !== 86400000;
 }
-export function meetingLabel(event: ExternalCalendarEvent, timezone: string) {
+export function meetingLabel(
+  event: Pick<ExternalCalendarEvent, "start" | "end" | "allDay">,
+  timezone: string,
+) {
   if (event.allDay)
     return `All day · ${event.start} to ${Temporal.PlainDate.from(event.end).subtract({ days: 1 })}`;
   const format = (instant: string) => {

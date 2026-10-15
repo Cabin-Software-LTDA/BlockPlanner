@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { EditorPanel } from "./editor-panel";
 import { Repeat2, X } from "lucide-react";
 import type {
   Task,
@@ -22,7 +23,7 @@ export function BlockEditor({
   date,
   preferences,
   close,
-  run,
+  run: runAction,
 }: {
   block?: TimeBlockOccurrence;
   recurring: boolean;
@@ -53,8 +54,20 @@ export function BlockEditor({
   const [color, setColor] = useState<Color>(block?.color ?? "sage");
   const [icon, setIcon] = useState<BlockIcon>(block?.icon ?? "book");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function run(action: () => Promise<unknown>) {
+    setError("");
+    return runAction(async () => {
+      try {
+        return await action();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not save block.");
+        throw e;
+      }
+    });
+  }
   return (
-    <aside className="editor" aria-label="Block details">
+    <EditorPanel label="Block details" close={close}>
       <div className="section-heading">
         <h2>{block ? "Block details" : "Make room for focus"}</h2>
         <button
@@ -94,6 +107,11 @@ export function BlockEditor({
             </button>
           )}
         </section>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
       )}
       <form
         onSubmit={async (e) => {
@@ -138,7 +156,7 @@ export function BlockEditor({
         <label>
           Block name
           <input
-            autoFocus
+            data-initial-focus
             required
             maxLength={100}
             value={title}
@@ -259,6 +277,6 @@ export function BlockEditor({
         <br />
         Leave some space between the things that matter.
       </div>
-    </aside>
+    </EditorPanel>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useModalDialog } from "./editor-panel";
 import { X } from "lucide-react";
 import type { Task, TimeBlockOccurrence } from "@/domain/models";
 import { saveTask } from "@/lib/db/repository";
@@ -17,7 +18,7 @@ export function TaskEditor({
   run: RunAction;
   close: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModalDialog();
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
   const [estimate, setEstimate] = useState(
@@ -26,17 +27,15 @@ export function TaskEditor({
   const [destination, setDestination] = useState(task.occurrenceId ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    const node = dialog.current;
-    node?.showModal();
-    return () => node?.close();
-  }, []);
   return (
     <dialog
       ref={dialog}
       className="task-editor"
       aria-labelledby="task-editor-title"
-      onCancel={close}
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
     >
       <div className="section-heading">
         <h2 id="task-editor-title">Task details</h2>
@@ -76,7 +75,7 @@ export function TaskEditor({
         <label>
           Task name
           <input
-            autoFocus
+            data-initial-focus
             required
             maxLength={300}
             value={title}

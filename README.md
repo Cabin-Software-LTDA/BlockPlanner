@@ -1,6 +1,6 @@
 # TimeBlock
 
-A local-first daily planner. Phases 1–4: local planner, recurring routines, and optional read-only Google Calendar. Core planning needs no account or backend. No telemetry.
+A local-first daily planner. Phases 1–5: local planner, recurring routines, optional read-only Google Calendar, and backup/accessibility/mobile polish. Core planning needs no account or backend. No telemetry.
 
 ## Run
 
@@ -27,26 +27,31 @@ In the browser: create a block, add and complete a task, reload, and confirm bot
 
 - Next.js App Router, strict TypeScript, Tailwind, Lucide, Dexie, Zustand.
 - Responsive shell, mini calendar, date navigation, light/dark mode, current-time indicator.
-- Separate domain models, versioned IndexedDB schema (v2 preserves v1 data), transactional block creation.
+- Separate domain models, versioned IndexedDB schema (v3 preserves v1/v2 data), transactional block creation.
 - Block creation, date/time editing, deletion, overlap lanes, overnight clipping, and explicit 24-hour intervals.
 - dnd-kit move and top/bottom resize handles, snapped previews, and arrow-key equivalents.
 - Tasks: add, edit, complete, delete, notes, optional minute estimates, drag reordering, and moves between blocks/inbox.
 - Keyboard reorder buttons and a native accessible task dialog with destination selection.
 - Short blocks expose their tasks in the details panel; full task data persists after reload.
-- Preferences: timezone captured on first use, visible hours, theme, 15/30 minute input step.
+- Preferences: display timezone, visible hours, theme, 15/30 minute input step. Existing blocks/routines retain their own timezones.
 - Daily/selected-weekday routines, inclusive date bounds, reusable block presets, and stable dated occurrences.
 - Single-occurrence overrides, whole-series edits, skip/restore, and reset-to-routine controls.
 - Read-only Google Calendar, calendar selection, paginated recurring event expansion, manual refresh, offline event cache, and disconnect.
 - Meeting entries within intersecting blocks, independent overlap lanes, all-day dates, and a full-time agenda.
+- Versioned JSON export/import, reviewed replacement restores, and a persistent recovery copy.
+- Modifier-key shortcuts, focus-managed block/routine/task dialogs, and a skip-to-planner link.
+- Collapsible mobile planning tools and a day-list alternative to dense timeline layouts.
+- Indexed per-day task/definition lookups instead of repeated nested scans.
 - Domain, OAuth/API adapter, migration, and persistence tests.
 
 ## Not implemented yet
 
 - Automatic task-template cloning and “this and following” series splitting.
-- JSON export/import, global keyboard shortcuts, PWA/service worker offline launch.
-- Timezone selection and repeated-hour DST timeline rendering.
+- PWA/service worker offline launch.
+- Repeated-hour DST timeline rendering (meetings use an exact-offset agenda on transition days).
+- Full screen-reader/native touch-device certification and live Google consent verification.
 
-Data stays in this browser profile and origin. Changing ports/hostnames produces a different storage origin. Browser storage can be cleared or evicted; backup UI is still pending. Local operations do not need a backend; fully offline page launch after stopping the Next server is not yet supported.
+Data stays in this browser profile and origin. Changing ports/hostnames produces a different storage origin. Browser storage can be cleared or evicted; download backups regularly. Recovery copies live in the same browser storage and do not protect against eviction. Local operations do not need a backend; fully offline page launch after stopping the Next server is not yet supported.
 
 ## Phase 3 routine checks
 
@@ -71,7 +76,7 @@ Limits: blocks are 15 minutes to 24 wall-clock hours. Resize enforces at least t
 
 See [architecture](docs/architecture.md) for relationships, edge cases, and milestone sequence.
 
-Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 66 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
+Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 78 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
 
 ## Phase 4 Google Calendar setup and verification
 
@@ -88,4 +93,25 @@ Use the same hostname/port as your original planner to retain that origin's Inde
 
 **Validation:** automated OAuth tests use a fake Google Identity Services adapter; API tests mock HTTP responses. Browser checks covered loading Google's real library and fixture-based meeting rendering. Live consent/event retrieval is not yet verified: the in-app browser did not expose the OAuth popup. The temporary synthetic preview was isolated from IndexedDB and removed after verification. Run the flow above in your normal browser to validate your Google Cloud configuration.
 
-**Tradeoffs:** this uses Google's [browser token model](https://developers.google.com/identity/oauth2/web/guides/use-token-model), avoiding a token backend. One Google account is connected at a time. Cached event titles/times/calendar identities are local plaintext IndexedDB data; disconnect clears them. Only visited days are cached; no background synchronization. On DST clock-change days, meetings use an offset-labelled agenda instead of the wall-clock lane. Full repeated-hour timeline support, backup/import, and accessibility/responsive polish remain Phase 5 work.
+**Tradeoffs:** this uses Google's [browser token model](https://developers.google.com/identity/oauth2/web/guides/use-token-model), avoiding a token backend. One Google account is connected at a time. Cached event titles/times/calendar identities are local plaintext IndexedDB data; disconnect clears them. Only visited days are cached; no background synchronization. On DST clock-change days, meetings use an offset-labelled agenda instead of the wall-clock lane. Full repeated-hour timeline support remains deferred; Phase 5 adds backup/import and keyboard/mobile improvements.
+
+## Phase 5: backup and usability checks
+
+- Open **Backup and restore** in the sidebar (under **Planning tools** on mobile). Download JSON, select that file again, inspect the counts/timezone, acknowledge replacement, and restore. The UI does not write anything until the restore button is activated. Only TimeBlock format version 1 JSON up to 20 MB is accepted; this format version is separate from IndexedDB schema version 3.
+- A restore replaces blocks, definitions, tasks, exceptions, preferences and daily layouts. It preserves IDs, task notes, completion and recurrence identity. It excludes Google connection metadata, cached meetings and credentials; existing calendar data stays unchanged.
+- The previous planner is saved inside the same transaction as the replacement. **Restore recovery copy** swaps the current planner and the saved copy, so intervening edits remain recoverable. A subsequent file restore replaces the recovery slot with the workspace that existed immediately before that restore. Download the recovery copy if you need to retain it independently.
+- Invalid formats, duplicate IDs, orphan references, invalid recurrence exceptions, malformed dates/timezones and invalid ranges fail before writing. A storage failure rolls back both the replacement and the recovery snapshot.
+- **Keyboard shortcuts** shows Alt+Shift+N (new block), R (routine), T (today), left/right (day navigation), and K (help). On Mac, use Option+Shift. Shortcuts ignore text input, IME composition, held-key repeat and open dialogs. Existing task arrow buttons and block-handle arrow controls continue to work.
+- Block/routine/task editors use native modal dialogs: focus moves inside, Tab stays inside, Escape closes, and focus returns to the trigger or planner. Save validation errors appear inside the editor. The day list supports task editing/completion and block editing without spatial dragging.
+- On a narrow screen, **Planning tools** expands the calendar, routines, inbox, backup controls and theme switch. **Day list** shows all blocks intersecting the day, including blocks outside the configured timeline hours. Timeline remains the default and scrolls horizontally inside its own region when calendar lanes need space.
+- **View settings → Display timezone** changes the view and the default for new blocks. It never moves existing blocks or changes routine definitions. The day list uses full dates and UTC offsets to make overnight/timezone boundaries explicit.
+
+Verification: 78 automated tests, strict TypeScript and production build. Browser smoke tests verified actual JSON download/file selection, restore preview and acknowledgement, replacement/recovery, preserved task notes/completion, keyboard new-block, typing suppression, inline validation, Escape/focus restoration, and a 390px day-list layout without page overflow. Physical touch hardware and a full assistive-technology audit remain outstanding. This app still requires a reachable server for a fresh page launch; it does not install a service worker.
+
+## Vercel deployment
+
+`vercel.json` explicitly selects **Next.js**, runs `npm run build`, and points the build adapter to `.next`. This overrides an incorrect dashboard output setting such as `public`. Set the Vercel project's **Root Directory** to the repository root. See [Vercel's configuration reference](https://vercel.com/docs/project-configuration/vercel-json).
+
+If a deployment was already built from an older commit, redeploy the latest `main`. The isolated configuration fix is commit `c17c379`. The production build is validated locally; remote deployment status is not verified from this workspace.
+
+Because `.env.local` is intentionally ignored, add `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in Vercel's environment settings for the relevant environments, then redeploy. Register the deployed HTTPS origin in Google Cloud's Authorized JavaScript origins. No client secret is needed. Localhost and the deployed site have separate browser storage: use **Backup and restore** to move planner data between them, and connect Google separately on the deployed origin.

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import {
   ArrowDown,
@@ -26,14 +26,15 @@ function TaskRow({
   run: RunAction;
   draggable: boolean;
 }) {
+  const instanceId = useId();
   const { editTask, busy } = usePlannerInteractions();
   const drag = useDraggable({
-    id: `${draggable ? "task" : "editor-task"}:${task.id}`,
+    id: `${instanceId}:task:${task.id}`,
     data: { kind: "task", taskId: task.id },
     disabled: !draggable || busy,
   });
   const drop = useDroppable({
-    id: `${draggable ? "target" : "editor-target"}:${task.id}`,
+    id: `${instanceId}:target:${task.id}`,
     data: {
       kind: "task-target",
       taskId: task.id,
@@ -120,11 +121,12 @@ export function TaskList({
   dropZone?: boolean;
   draggable?: boolean;
 }) {
+  const instanceId = useId();
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const { busy } = usePlannerInteractions();
   const drop = useDroppable({
-    id: `${draggable ? "list" : "editor-list"}:${occurrenceId ?? "inbox"}`,
+    id: `${instanceId}:list:${occurrenceId ?? "inbox"}`,
     data: { kind: "task-list", occurrenceId },
     disabled: !dropZone || !draggable || busy,
   });

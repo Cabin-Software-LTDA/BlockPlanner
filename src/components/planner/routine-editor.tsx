@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { EditorPanel } from "./editor-panel";
 import { Repeat2, X } from "lucide-react";
 import type {
   BlockIcon,
@@ -105,7 +106,11 @@ export function RoutineEditor({
     if (ok && closeAfter) close();
   }
   return (
-    <aside className="editor routine-editor" aria-label="Routine details">
+    <EditorPanel
+      className="routine-editor"
+      label="Routine details"
+      close={close}
+    >
       <div className="section-heading">
         <h2>
           <Repeat2 size={16} />{" "}
@@ -180,7 +185,7 @@ export function RoutineEditor({
         <label>
           Routine name
           <input
-            autoFocus
+            data-initial-focus
             required
             maxLength={100}
             value={title}
@@ -412,6 +417,6 @@ export function RoutineEditor({
           </details>
         </section>
       )}
-    </aside>
+    </EditorPanel>
   );
 }

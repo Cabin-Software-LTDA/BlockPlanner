@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { format, parseISO } from "date-fns";
 import {
@@ -14,6 +14,10 @@ import {
   Layers2,
   ShieldCheck,
 } from "lucide-react";
+import { BackupDialog } from "./backup-dialog";
+import { KeyboardShortcuts, ShortcutHelp } from "./keyboard-shortcuts";
+import { DayList } from "./day-list";
+import { plannerView } from "@/domain/planner-view";
 import { db } from "@/lib/db/database";
 import { initialize } from "@/lib/db/repository";
 import {
@@ -43,6 +47,10 @@ export default function Planner() {
   const [adding, setAdding] = useState(false);
   const [routineEditor, setRoutineEditor] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"timeline" | "list">("timeline");
   const [now, setNow] = useState(new Date());
   const { selectedId, select } = usePlannerUI();
   useEffect(() => {
@@ -61,14 +69,38 @@ export default function Planner() {
     return () => clearInterval(timer);
   }, []);
   const data = useLiveQuery(
-    async () => ({
-      preferences: await db.preferences.get("user"),
-      definitions: await db.definitions.toArray(),
-      exceptions: await db.exceptions.toArray(),
-      blocks: await db.occurrences.toArray(),
-      tasks: await db.tasks.toArray(),
-    }),
+    () =>
+      db.transaction(
+        "r",
+        [
+          db.preferences,
+          db.definitions,
+          db.exceptions,
+          db.occurrences,
+          db.tasks,
+        ],
+        async () => ({
+          preferences: await db.preferences.get("user"),
+          definitions: await db.definitions.toArray(),
+          exceptions: await db.exceptions.toArray(),
+          blocks: await db.occurrences.toArray(),
+          tasks: await db.tasks.toArray(),
+        }),
+      ),
     [],
+  );
+  const view = useMemo(
+    () =>
+      data?.preferences && date
+        ? plannerView(
+            data.blocks,
+            data.tasks,
+            data.definitions,
+            date,
+            data.preferences,
+          )
+        : null,
+    [data, date],
   );
   const calendar = useGoogleCalendar(date, data?.preferences?.timezone);
   const routineRevision = JSON.stringify([
@@ -94,7 +126,7 @@ export default function Planner() {
       return false;
     }
   }
-  if (!ready || !data?.preferences)
+  if (!ready || !data?.preferences || !view)
     return (
       <main className="loading">
         <Layers2 size={34} />
@@ -113,11 +145,7 @@ export default function Planner() {
     setAdding(false);
   };
   const timezone = preferences.timezone;
-  const visible = blocks.filter(
-    (b) =>
-      minuteOnDay(b.end, date, timezone) > preferences.visibleStart * 60 &&
-      minuteOnDay(b.start, date, timezone) < preferences.visibleEnd * 60,
-  );
+  const { visible, taskCount, completed: done } = view;
   const selected = blocks.find((b) => b.id === selectedId);
   const changeDate = (d: string) => {
     if (!d) return;
@@ -126,18 +154,31 @@ export default function Planner() {
     select(null);
     setAdding(false);
   };
-  const dayTasks = tasks.filter((t) =>
-    blocks.some(
-      (b) =>
-        b.id === t.occurrenceId &&
-        minuteOnDay(b.end, date, timezone) > 0 &&
-        minuteOnDay(b.start, date, timezone) < 1440,
-    ),
-  );
-  const done = dayTasks.filter((t) => t.completed).length;
+  const openBlock = (id?: string) => {
+    setRoutineEditor(null);
+    select(id ?? null);
+    setAdding(!id);
+  };
   const nowMinute = minuteOnDay(now.toISOString(), date, timezone);
   return (
     <div className="app" data-theme={preferences.theme}>
+      <a className="skip-link" href="#daily-planner">
+        Skip to daily planner
+      </a>
+      <KeyboardShortcuts
+        onAction={(action) => {
+          if (action === "new-block") openBlock();
+          else if (action === "new-routine") openRoutine("new");
+          else if (action === "help") setHelpOpen(true);
+          else
+            changeDate(
+              action === "today"
+                ? today(timezone)
+                : shiftDate(date, action === "previous" ? -1 : 1),
+            );
+        }}
+      />
+
       <PlannerInteractions
         blocks={blocks}
         tasks={tasks}
@@ -151,89 +192,120 @@ export default function Planner() {
             </span>
             TimeBlock<span className="brand-dot">.</span>
           </a>
-          <div className="workspace-label">YOUR PERSONAL SPACE</div>
-          <div className="nav-active">
-            <Layers2 size={17} />
-            Daily planner<span>01</span>
-          </div>
-          <MiniCalendar date={date} onChange={changeDate} />
-          <section className="routines-sidebar" aria-label="Routines">
-            <div className="section-heading">
-              <h2>
-                <Repeat2 size={15} /> Routines
-              </h2>
+          <button
+            className="secondary mobile-tools-toggle"
+            aria-controls="planning-tools"
+            aria-expanded={toolsOpen}
+            onClick={() => setToolsOpen(!toolsOpen)}
+          >
+            Planning tools
+            {(view.tasksByBlock.get(null)?.length ?? 0) > 0
+              ? ` · ${view.tasksByBlock.get(null)!.length} unscheduled`
+              : ""}
+          </button>
+          <div
+            id="planning-tools"
+            className={`sidebar-content ${toolsOpen ? "tools-open" : ""}`}
+          >
+            <div className="workspace-label">YOUR PERSONAL SPACE</div>
+            <div className="nav-active">
+              <Layers2 size={17} />
+              Daily planner<span>01</span>
+            </div>
+            <MiniCalendar date={date} onChange={changeDate} />
+            <section className="routines-sidebar" aria-label="Routines">
+              <div className="section-heading">
+                <h2>
+                  <Repeat2 size={15} /> Routines
+                </h2>
+                <button
+                  className="icon-button"
+                  aria-label="New routine"
+                  onClick={() => openRoutine("new")}
+                >
+                  <Plus size={17} />
+                </button>
+              </div>
+              {!routines.length && (
+                <p className="muted">Give your week a little rhythm.</p>
+              )}
+              {routines.map((definition) => (
+                <button
+                  key={definition.id}
+                  className="routine-nav"
+                  onClick={() => openRoutine(definition.id)}
+                >
+                  <span className={`category-dot ${definition.color}`} />
+                  <span>
+                    <strong>{definition.title}</strong>
+                    <small>
+                      {routineSummary(definition)} · {definition.startTime}
+                    </small>
+                  </span>
+                </button>
+              ))}
               <button
-                className="icon-button"
-                aria-label="New routine"
+                className="routine-add"
                 onClick={() => openRoutine("new")}
               >
-                <Plus size={17} />
+                + Create routine
               </button>
-            </div>
-            {!routines.length && (
-              <p className="muted">Give your week a little rhythm.</p>
-            )}
-            {routines.map((definition) => (
-              <button
-                key={definition.id}
-                className="routine-nav"
-                onClick={() => openRoutine(definition.id)}
-              >
-                <span className={`category-dot ${definition.color}`} />
-                <span>
-                  <strong>{definition.title}</strong>
-                  <small>
-                    {routineSummary(definition)} · {definition.startTime}
-                  </small>
+            </section>
+            <CalendarPanel calendar={calendar} />
+            <section className="inbox">
+              <div className="section-heading">
+                <h2>Unscheduled</h2>
+                <span className="count">
+                  {(view.tasksByBlock.get(null) ?? []).length}
                 </span>
+              </div>
+              <p className="muted">A place for the things on your mind.</p>
+              <TaskList
+                tasks={view.tasksByBlock.get(null) ?? []}
+                occurrenceId={null}
+                run={run}
+              />
+            </section>
+            <div className="workspace-actions">
+              <button className="secondary" onClick={() => setBackupOpen(true)}>
+                Backup and restore
               </button>
-            ))}
-            <button className="routine-add" onClick={() => openRoutine("new")}>
-              + Create routine
-            </button>
-          </section>
-          <CalendarPanel calendar={calendar} />
-          <section className="inbox">
-            <div className="section-heading">
-              <h2>Unscheduled</h2>
-              <span className="count">
-                {tasks.filter((t) => t.occurrenceId === null).length}
-              </span>
+              <button
+                className="secondary"
+                aria-keyshortcuts="Alt+Shift+K"
+                onClick={() => setHelpOpen(true)}
+              >
+                Keyboard shortcuts
+              </button>
             </div>
-            <p className="muted">A place for the things on your mind.</p>
-            <TaskList
-              tasks={tasks.filter((t) => t.occurrenceId === null)}
-              occurrenceId={null}
-              run={run}
-            />
-          </section>
-          <div className="sidebar-bottom">
-            <ShieldCheck size={15} />
-            <span>
-              Private by default
-              <br />
-              <small>Saved on this device</small>
-            </span>
-            <button
-              className="icon-button"
-              aria-label={`Use ${preferences.theme === "light" ? "dark" : "light"} mode`}
-              onClick={() =>
-                void run(() =>
-                  db.preferences.update("user", {
-                    theme: preferences.theme === "light" ? "dark" : "light",
-                  }),
-                )
-              }
-            >
-              {preferences.theme === "light" ? (
-                <Moon size={17} />
-              ) : (
-                <Sun size={17} />
-              )}
-            </button>
+            <div className="sidebar-bottom">
+              <ShieldCheck size={15} />
+              <span>
+                Private by default
+                <br />
+                <small>Saved on this device</small>
+              </span>
+              <button
+                className="icon-button"
+                aria-label={`Use ${preferences.theme === "light" ? "dark" : "light"} mode`}
+                onClick={() =>
+                  void run(() =>
+                    db.preferences.update("user", {
+                      theme: preferences.theme === "light" ? "dark" : "light",
+                    }),
+                  )
+                }
+              >
+                {preferences.theme === "light" ? (
+                  <Moon size={17} />
+                ) : (
+                  <Sun size={17} />
+                )}
+              </button>
+            </div>
           </div>
         </aside>
-        <main className="main">
+        <main className="main" id="daily-planner" tabIndex={-1}>
           <header className="topbar">
             <span>
               My workspace <span className="breadcrumb">/</span>{" "}
@@ -250,17 +322,16 @@ export default function Planner() {
               </div>
               <h1>
                 {format(parseISO(date), "EEEE")}
-                <span>, {format(parseISO(date), "MMMM d")}</span>
+                <span className="day-date">
+                  {format(parseISO(date), "MMMM d")}
+                </span>
               </h1>
               <p>Your day, thoughtfully arranged.</p>
             </div>
             <button
               className="primary"
-              onClick={() => {
-                select(null);
-                setAdding(true);
-                setRoutineEditor(null);
-              }}
+              aria-keyshortcuts="Alt+Shift+N"
+              onClick={() => openBlock()}
             >
               <Plus size={17} />
               New block
@@ -297,11 +368,28 @@ export default function Planner() {
             </div>
             <button
               className="secondary"
+              aria-label="View settings"
               aria-expanded={settings}
               onClick={() => setSettings(!settings)}
             >
               <SlidersHorizontal size={15} />
               <span>View settings</span>
+            </button>
+          </div>
+          <div className="view-switch" role="group" aria-label="Planner view">
+            <button
+              className="secondary"
+              aria-pressed={viewMode === "timeline"}
+              onClick={() => setViewMode("timeline")}
+            >
+              Timeline
+            </button>
+            <button
+              className="secondary"
+              aria-pressed={viewMode === "list"}
+              onClick={() => setViewMode("list")}
+            >
+              Day list
             </button>
           </div>
           {settings && (
@@ -363,7 +451,37 @@ export default function Planner() {
                   <option value={30}>30 minutes</option>
                 </select>
               </label>
-              <span className="muted">{timezone}</span>
+              <label>
+                Display timezone
+                <select
+                  value={timezone}
+                  onChange={(event) =>
+                    void run(() =>
+                      db.preferences.update("user", {
+                        timezone: event.target.value,
+                      }),
+                    )
+                  }
+                >
+                  {[
+                    ...new Set([
+                      timezone,
+                      "UTC",
+                      ...Intl.supportedValuesOf("timeZone"),
+                    ]),
+                  ]
+                    .sort()
+                    .map((zone) => (
+                      <option key={zone} value={zone}>
+                        {zone}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="muted">
+                Existing blocks and routines keep their original timezone. This
+                changes the view and the default for new blocks.
+              </p>
             </section>
           )}
           {error && (
@@ -409,15 +527,15 @@ export default function Planner() {
           <div className="day-summary">
             <span>
               <span className="small-dot" />
-              {visible.length} blocks planned
+              {view.dayBlocks.length} blocks planned
             </span>
             <span>
-              {done} / {dayTasks.length} tasks complete
+              {done} / {taskCount} tasks complete
             </span>
             <div className="progress">
               <i
                 style={{
-                  width: `${dayTasks.length ? (done / dayTasks.length) * 100 : 0}%`,
+                  width: `${taskCount ? (done / taskCount) * 100 : 0}%`,
                 }}
               />
             </div>
@@ -428,105 +546,120 @@ export default function Planner() {
             preferences={preferences}
             blocks={blocks}
           />
-          <div className="timeline-wrap">
+          {viewMode === "list" ? (
+            <DayList
+              view={view}
+              meetings={calendar.events}
+              preferences={preferences}
+              open={(block) => openBlock(block.id)}
+              run={run}
+            />
+          ) : (
             <div
-              className={`timeline ${calendar.events.some((e) => !e.allDay) && !hasClockChange(date, timezone) ? "has-meetings" : ""}`}
-              style={{
-                height:
-                  (preferences.visibleEnd - preferences.visibleStart) * 100,
-              }}
+              className="timeline-wrap"
+              role="region"
+              aria-label="Daily timeline"
+              tabIndex={0}
             >
-              <div className="timezone-label">
-                {
-                  new Intl.DateTimeFormat("en", {
-                    timeZone: timezone,
-                    timeZoneName: "short",
-                  })
-                    .formatToParts(now)
-                    .find((p) => p.type === "timeZoneName")?.value
-                }
-              </div>
-              {Array.from(
-                { length: preferences.visibleEnd - preferences.visibleStart },
-                (_, i) => (
-                  <div className="hour-line" key={i} style={{ top: i * 100 }}>
-                    <span>
-                      {String(i + preferences.visibleStart).padStart(2, "0")}:00
-                    </span>
-                  </div>
-                ),
-              )}
-              {layoutBlocks(visible).map(({ block, lane, lanes }) => (
-                <TimelineBlock
-                  key={block.id}
-                  block={block}
-                  meetings={calendar.events}
-                  recurring={Boolean(
-                    definitions.find((d) => d.id === block.definitionId)
-                      ?.recurrence,
-                  )}
-                  lane={lane}
-                  lanes={lanes}
+              <div
+                className={`timeline ${calendar.events.some((e) => !e.allDay) && !hasClockChange(date, timezone) ? "has-meetings" : ""}`}
+                style={{
+                  height:
+                    (preferences.visibleEnd - preferences.visibleStart) * 100,
+                }}
+              >
+                <div className="timezone-label">
+                  {
+                    new Intl.DateTimeFormat("en", {
+                      timeZone: timezone,
+                      timeZoneName: "short",
+                    })
+                      .formatToParts(now)
+                      .find((p) => p.type === "timeZoneName")?.value
+                  }
+                </div>
+                {Array.from(
+                  { length: preferences.visibleEnd - preferences.visibleStart },
+                  (_, i) => (
+                    <div className="hour-line" key={i} style={{ top: i * 100 }}>
+                      <span>
+                        {String(i + preferences.visibleStart).padStart(2, "0")}
+                        :00
+                      </span>
+                    </div>
+                  ),
+                )}
+                {layoutBlocks(visible).map(({ block, lane, lanes }) => (
+                  <TimelineBlock
+                    key={block.id}
+                    block={block}
+                    meetings={calendar.events}
+                    recurring={Boolean(
+                      view.definitionsById.get(block.definitionId)?.recurrence,
+                    )}
+                    lane={lane}
+                    lanes={lanes}
+                    date={date}
+                    preferences={preferences}
+                    tasks={view.tasksByBlock.get(block.id) ?? []}
+                    selected={selectedId === block.id}
+                    run={run}
+                    open={() => {
+                      setRoutineEditor(null);
+                      select(block.id);
+                      setAdding(false);
+                    }}
+                  />
+                ))}
+                <MeetingLane
+                  events={calendar.events}
                   date={date}
                   preferences={preferences}
-                  tasks={tasks.filter((t) => t.occurrenceId === block.id)}
-                  selected={selectedId === block.id}
-                  run={run}
-                  open={() => {
-                    setRoutineEditor(null);
-                    select(block.id);
-                    setAdding(false);
-                  }}
+                  blocks={blocks}
                 />
-              ))}
-              <MeetingLane
-                events={calendar.events}
-                date={date}
-                preferences={preferences}
-                blocks={blocks}
-              />
-              {!visible.length &&
-                !calendar.events.length &&
-                !generation.pending &&
-                !generation.error && (
-                  <div className="empty-state">
-                    <span className="empty-icon">
-                      <Sparkles size={27} />
-                    </span>
-                    <h2>A fresh page for your day.</h2>
-                    <p>
-                      Make space for deep work, a slow lunch,
-                      <br />
-                      or whatever matters to you.
-                    </p>
-                    <button
-                      className="secondary"
-                      onClick={() => {
-                        setAdding(true);
-                        setRoutineEditor(null);
+                {!visible.length &&
+                  !calendar.events.length &&
+                  !generation.pending &&
+                  !generation.error && (
+                    <div className="empty-state">
+                      <span className="empty-icon">
+                        <Sparkles size={27} />
+                      </span>
+                      <h2>A fresh page for your day.</h2>
+                      <p>
+                        Make space for deep work, a slow lunch,
+                        <br />
+                        or whatever matters to you.
+                      </p>
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          setAdding(true);
+                          setRoutineEditor(null);
+                        }}
+                      >
+                        <Plus size={16} />
+                        Create your first block
+                      </button>
+                    </div>
+                  )}
+                {nowMinute >= preferences.visibleStart * 60 &&
+                  nowMinute < preferences.visibleEnd * 60 && (
+                    <div
+                      className="now-line"
+                      style={{
+                        top:
+                          ((nowMinute - preferences.visibleStart * 60) * 100) /
+                          60,
                       }}
                     >
-                      <Plus size={16} />
-                      Create your first block
-                    </button>
-                  </div>
-                )}
-              {nowMinute >= preferences.visibleStart * 60 &&
-                nowMinute < preferences.visibleEnd * 60 && (
-                  <div
-                    className="now-line"
-                    style={{
-                      top:
-                        ((nowMinute - preferences.visibleStart * 60) * 100) /
-                        60,
-                    }}
-                  >
-                    <span>{timeLabel(now.toISOString(), timezone)}</span>
-                    <i />
-                  </div>
-                )}
+                      <span>{timeLabel(now.toISOString(), timezone)}</span>
+                      <i />
+                    </div>
+                  )}
+              </div>
             </div>
-          </div>
+          )}
           <footer>
             Make a plan. Leave room for life.
             <span>TimeBlock · Your day, your pace</span>
@@ -545,7 +678,7 @@ export default function Planner() {
                 ?.recurrence,
             )}
             editSeries={() => selected && openRoutine(selected.definitionId)}
-            tasks={tasks.filter((t) => t.occurrenceId === selected?.id)}
+            tasks={view.tasksByBlock.get(selected?.id ?? "") ?? []}
             date={date}
             preferences={preferences}
             close={() => {
@@ -568,6 +701,18 @@ export default function Planner() {
             close={() => setRoutineEditor(null)}
           />
         )}
+        {backupOpen && (
+          <BackupDialog
+            close={() => setBackupOpen(false)}
+            restored={() => {
+              select(null);
+              setAdding(false);
+              setRoutineEditor(null);
+              generation.retry();
+            }}
+          />
+        )}
+        {helpOpen && <ShortcutHelp close={() => setHelpOpen(false)} />}
       </PlannerInteractions>
     </div>
   );
