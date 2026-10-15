@@ -204,3 +204,38 @@ it("persists local assignment across refresh/reopen without changing meeting tim
   await disconnectCalendar(db);
   expect(await db.meetingPlacements.count()).toBe(0);
 });
+
+it("keeps Google and Nextcloud caches/assignments isolated when connecting or disconnecting either provider", async () => {
+  const db = database();
+  const nc = {
+    ...connection,
+    id: "nextcloud:one",
+    provider: "nextcloud" as const,
+  };
+  await saveConnection(connection, db);
+  await cacheDay(connection, "2026-10-15", "UTC", [event], () => true, db);
+  await saveConnection(nc, db);
+  const other = {
+    ...event,
+    id: "nc-event",
+    connectionId: nc.id,
+    provider: "nextcloud" as const,
+  };
+  await cacheDay(nc, "2026-10-15", "UTC", [other], () => true, db);
+  expect(await db.connections.count()).toBe(2);
+  expect(await db.events.count()).toBe(2);
+  await db.meetingPlacements.put({
+    id: other.id,
+    connectionId: nc.id,
+    occurrenceId: null,
+  });
+  await disconnectCalendar(db, "google");
+  expect(await db.events.toArray()).toEqual([other]);
+  expect(await db.meetingPlacements.count()).toBe(1);
+  await saveConnection({ ...nc, id: "nextcloud:two" }, db);
+  expect(await db.events.count()).toBe(0);
+  expect(await db.meetingPlacements.count()).toBe(0);
+  expect((await db.connections.toArray()).map((c) => c.id)).toEqual([
+    "nextcloud:two",
+  ]);
+});

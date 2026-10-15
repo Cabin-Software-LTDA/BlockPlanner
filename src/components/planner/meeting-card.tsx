@@ -72,7 +72,7 @@ export function MeetingCard({
         <strong>{event.title}</strong>
         <small>
           {timeLabel(event.start, timezone)}–{timeLabel(event.end, timezone)} ·
-          Google Calendar
+          {event.provider === "nextcloud" ? "Nextcloud" : "Google Calendar"}
         </small>
       </button>
     </article>
@@ -96,7 +96,10 @@ export function MeetingDialog({
   const { busy } = usePlannerInteractions();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const source = safeEventUrl(event.sourceUrl);
+  const source =
+    event.provider === "nextcloud"
+      ? safeMeetingUrl(event.sourceUrl)
+      : safeEventUrl(event.sourceUrl);
   const join = safeMeetingUrl(event.meetingUrl);
   return (
     <EditorPanel label="Meeting details" close={close}>
@@ -112,8 +115,8 @@ export function MeetingDialog({
       </div>
       <p>{meetingLabel(event, timezone)}</p>
       <p className="muted">
-        Google Calendar owns this meeting. Assigning it to a block changes only
-        its position in TimeBlock; its start and end stay fixed.
+        The external calendar owns this meeting. Assigning it to a block changes
+        only its position in TimeBlock; its start and end stay fixed.
       </p>
       <div className="meeting-links">
         {source && (
@@ -123,7 +126,10 @@ export function MeetingDialog({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Open in Google Calendar
+            Open in{" "}
+            {event.provider === "nextcloud"
+              ? "Nextcloud Calendar"
+              : "Google Calendar"}
           </a>
         )}
         {join && (
@@ -133,7 +139,9 @@ export function MeetingDialog({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Join meeting
+            {event.provider === "nextcloud"
+              ? "Open event link"
+              : "Join meeting"}
           </a>
         )}
       </div>

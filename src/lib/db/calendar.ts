@@ -19,15 +19,22 @@ export async function saveConnection(
     async () => {
       const existing = await database.connections.get(connection.id);
       if (!isCurrent()) return;
-      await database.connections.clear();
+      const replaced = await database.connections
+        .filter(
+          (c) => c.provider === connection.provider && c.id !== connection.id,
+        )
+        .primaryKeys();
+      const replacedIds = new Set(replaced);
+      await database.connections.bulkDelete(replaced);
       await database.meetingPlacements
-        .filter((p) => p.connectionId !== connection.id)
+        .filter((p) => replacedIds.has(p.connectionId))
         .delete();
       await database.events
         .filter(
           (event) =>
-            event.connectionId !== connection.id ||
-            !connection.calendarIds.includes(event.calendarId),
+            replacedIds.has(event.connectionId) ||
+            (event.connectionId === connection.id &&
+              !connection.calendarIds.includes(event.calendarId)),
         )
         .delete();
       await database.connections.put({
@@ -112,16 +119,28 @@ export async function cacheDay(
     },
   );
 }
-export async function disconnectCalendar(database: TimeBlockDB = db) {
+export async function disconnectCalendar(
+  database: TimeBlockDB = db,
+  provider?: CalendarConnection["provider"],
+) {
   await database.transaction(
     "rw",
     database.connections,
     database.events,
     database.meetingPlacements,
     async () => {
-      await database.connections.clear();
-      await database.events.clear();
-      await database.meetingPlacements.clear();
+      const ids = new Set(
+        (await database.connections.toArray())
+          .filter((c) => !provider || c.provider === provider)
+          .map((c) => c.id),
+      );
+      await database.connections.bulkDelete([...ids]);
+      await database.events
+        .filter((e) => !provider || ids.has(e.connectionId))
+        .delete();
+      await database.meetingPlacements
+        .filter((p) => !provider || ids.has(p.connectionId))
+        .delete();
     },
   );
 }
@@ -149,7 +168,7 @@ export async function assignMeeting(
         const block = await database.occurrences.get(occurrenceId);
         if (!block || !containsMeeting(event, block))
           throw new Error(
-            "Choose a block that contains the meeting’s entire time range. Google Calendar times cannot be changed here.",
+            "Choose a block that contains the meeting’s entire time range. Calendar meeting times cannot be changed here.",
           );
       }
       await database.meetingPlacements.put({

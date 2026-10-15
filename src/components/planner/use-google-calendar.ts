@@ -26,7 +26,9 @@ import { eventOnDay } from "@/domain/calendar";
 export function useGoogleCalendar(date: string, timezone?: string) {
   const data = useLiveQuery(
     async () => ({
-      connection: await db.connections.toCollection().first(),
+      connection: await db.connections
+        .filter((c) => c.provider === "google")
+        .first(),
       events: await db.events.toArray(),
     }),
     [],
@@ -215,7 +217,7 @@ export function useGoogleCalendar(date: string, timezone?: string) {
     const revoking = revokeAccess();
     setAuthorized(false);
     try {
-      await disconnectCalendar();
+      await disconnectCalendar(db, "google");
       const revoked = await revoking;
       setNotice(
         revoked

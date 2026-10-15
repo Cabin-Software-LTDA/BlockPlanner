@@ -1,6 +1,6 @@
 # TimeBlock
 
-A local-first daily planner. Phases 1–5: local planner, recurring routines, optional read-only Google Calendar, and backup/accessibility/mobile polish. Core planning needs no account or backend. No telemetry.
+A local-first daily planner. Phases 1–5: local planner, recurring routines, optional read-only Google Calendar, and backup/accessibility/mobile polish. Core planning needs no account or backend. Optional Nextcloud syncing uses a small read-only server relay. No telemetry.
 
 ## Run
 
@@ -76,7 +76,7 @@ Limits: blocks are 15 minutes to 24 wall-clock hours. Resize enforces at least t
 
 See [architecture](docs/architecture.md) for relationships, edge cases, and milestone sequence.
 
-Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 89 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
+Browser smoke checks cover block/task workflows and recurring occurrence generation, per-day task isolation, overrides, whole-series edits, skip/restore persistence, reset-to-routine, and weekend exclusion. The current suite has 99 passing tests. Production builds use webpack because Turbopack's production CSS subprocess failed to bind a local port in this environment; development uses Turbopack successfully. Dependencies were checked against npm peer metadata and locked in `package-lock.json`. Framework setup follows the [Next.js installation guide](https://nextjs.org/docs/app/getting-started/installation); reactive database access follows [Dexie's React guide](https://dexie.org/docs/Tutorial/React).
 
 ## Phase 4 Google Calendar setup and verification
 
@@ -140,3 +140,20 @@ Click a meeting to open its exact dates/timezone offsets, Google Calendar link, 
 Assignments persist in the additive IndexedDB v4 `meetingPlacements` table, keyed by the full external event identity. Calendar refresh cannot overwrite them. If a block is deleted, shortened, or no longer contains an externally rescheduled event, the card falls back outside. Switching Google accounts clears the previous account's assignments; disconnect clears all assignments. Like cached calendar data, assignments are not included in planner JSON backups.
 
 Validation: 89 tests plus browser checks on an isolated origin: single rendering, details/links, drag outside, drag to another containing block, invalid destination rejection, and persistence after reload. New join links appear after refreshing the calendar.
+
+
+## Nextcloud Calendar (CalDAV)
+
+1. Set `NEXTCLOUD_URL` in ignored `.env.local` to your HTTPS Nextcloud installation root (include its subpath if applicable). On Vercel, add the same **server-only** environment variable and redeploy. Do not prefix it with `NEXT_PUBLIC_`. `.env.example` contains only an empty placeholder; corporate hostnames must not be committed.
+2. In Nextcloud, open **Settings → Security → Devices & sessions** and generate an app password for TimeBlock. Use your Nextcloud login username and this app password in the **Nextcloud Calendar** sidebar section. Do not enter these credentials in environment files or send them through chat.
+3. Connect, select up to 10 calendars, and navigate dates or choose **Refresh Nextcloud**. Google and Nextcloud can be connected simultaneously; each provider's connection, selection, refresh and disconnect are independent. The same real-world event received from two different providers remains two independent external identities.
+4. Nextcloud meetings use the same single-card rendering, event details, overlap lanes and local drag assignments. **Open in Nextcloud Calendar** opens the Calendar app; **Open event link** appears when the event supplies a safe HTTPS URL. This integration never writes to CalDAV or changes meeting times.
+5. Reloading retains cached event metadata but clears the in-memory app password. Reconnect to fetch updates. **Disconnect Nextcloud** removes its local cache and assignments while preserving Google data and planner tasks. Revoke the app password in Nextcloud Security to revoke server access too.
+
+Tradeoff: browser CalDAV access commonly needs CORS configuration. A same-origin Next.js `/api/nextcloud` endpoint avoids that requirement. It forwards credentials only to the server's configured HTTPS DAV tree, uses only PROPFIND/REPORT, rejects redirects and foreign addresses, applies time/size limits, and returns sanitized errors with no-store headers. Credentials pass through the deployment server for each request; they are never stored in IndexedDB, backups, cookies, server sessions or application logs. Deploy only on a host you trust with this transit. Core local planning remains backend-independent.
+
+The Nextcloud instance must be reachable from the deployment server. A corporate intranet/VPN-only instance requires hosting TimeBlock where that network is accessible; changing browser settings cannot make Vercel reach a private server. Use a valid trusted HTTPS certificate. Configure the installation root, not an individual calendar link or `remote.php/dav` endpoint. No OAuth client setup is needed.
+
+CalDAV discovery follows current-user-principal and calendar-home-set. Day queries request server-side expansion of recurrence, exceptions and exclusions. Stable identities combine principal, calendar, UID and RECURRENCE-ID. All-day events keep exclusive date ends; timed events use UTC instants or embedded VTIMEZONE definitions. Servers returning unexpanded recurrence or unresolved floating times fail the entire refresh instead of silently dropping occurrences. Partial fetches preserve cached events. Google and Nextcloud metadata remain excluded from planner backups.
+
+Validation: 99 automated tests, including CalDAV discovery/REPORT fixtures, expanded recurrence identities, all-day ranges, embedded timezone conversion, cross-origin/foreign-host rejection, safe errors, and provider isolation. Live corporate authentication and calendar retrieval require your app password and have not been verified. Nextcloud app-password setup is documented in the [Nextcloud user manual](https://docs.nextcloud.com/server/stable/user_manual/en/groupware/sync_kde.html).

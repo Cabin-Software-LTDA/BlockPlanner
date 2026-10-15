@@ -51,7 +51,8 @@ export interface Task {
 }
 export interface CalendarConnection {
   id: string;
-  provider: "google";
+  provider: "google" | "nextcloud";
+  serverUrl?: string;
   accountLabel: string;
   calendarIds: string[];
   lastSyncedAt?: string;
@@ -68,6 +69,7 @@ export interface ExternalCalendarEvent {
   start: string;
   end: string;
   allDay: boolean; // When true, start/end are ISO dates (exclusive end), never instants.
+  provider?: "google" | "nextcloud"; // Legacy cached events are Google.
   sourceUrl?: string;
   meetingUrl?: string;
 }

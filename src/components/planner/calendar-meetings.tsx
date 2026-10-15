@@ -79,7 +79,7 @@ export function CalendarAgenda({
   preferences,
   blocks,
 }: {
-  calendar: CalendarState;
+  calendar: Pick<CalendarState, "connection" | "events" | "syncedAt">;
   listView?: boolean;
   date: string;
   preferences: UserPreferences;
@@ -105,7 +105,7 @@ export function CalendarAgenda({
         <small>
           {calendar.syncedAt
             ? `Cached · refreshed ${new Date(calendar.syncedAt).toLocaleString()}`
-            : "This day has not been refreshed"}
+            : "Cached on this device · refresh from calendar controls"}
         </small>
       </div>
       {clockChange && (

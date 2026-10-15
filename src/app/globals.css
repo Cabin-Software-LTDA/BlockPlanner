@@ -1947,4 +1947,12 @@ kbd {
 .meeting-card.meeting-short .meeting-open {
   display: block;
 }
-.unified-meeting.meeting-short > * { visibility: visible; }
+.unified-meeting.meeting-short > * {
+  visibility: visible;
+}
+
+.nextcloud-connect {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}

@@ -36,6 +36,8 @@ import { TimelineBlock } from "./timeline-block";
 import { RoutineEditor } from "./routine-editor";
 import { useRoutines } from "./use-routines";
 import { useGoogleCalendar } from "./use-google-calendar";
+import { useNextcloudCalendar } from "./use-nextcloud-calendar";
+import { NextcloudPanel } from "./nextcloud-panel";
 import { CalendarPanel } from "./calendar-panel";
 import { CalendarAgenda, MeetingLane } from "./calendar-meetings";
 import { hasClockChange } from "@/domain/calendar";
@@ -105,6 +107,11 @@ export default function Planner() {
     [data, date],
   );
   const calendar = useGoogleCalendar(date, data?.preferences?.timezone);
+  const nextcloud = useNextcloudCalendar(date, data?.preferences?.timezone);
+  const calendarEvents = useMemo(
+    () => [...calendar.events, ...nextcloud.events],
+    [calendar.events, nextcloud.events],
+  );
   const routineRevision = JSON.stringify([
     data?.definitions.filter((d) => d.recurrence),
     data?.exceptions,
@@ -182,7 +189,7 @@ export default function Planner() {
       />
 
       <PlannerInteractions
-        events={calendar.events}
+        events={calendarEvents}
         placements={data.placements}
         blocks={blocks}
         tasks={tasks}
@@ -256,6 +263,7 @@ export default function Planner() {
               </button>
             </section>
             <CalendarPanel calendar={calendar} />
+            <NextcloudPanel calendar={nextcloud} />
             <section className="inbox">
               <div className="section-heading">
                 <h2>Unscheduled</h2>
@@ -545,7 +553,11 @@ export default function Planner() {
             </div>
           </div>
           <CalendarAgenda
-            calendar={calendar}
+            calendar={{
+              connection: calendar.connection ?? nextcloud.connection,
+              events: calendarEvents,
+              syncedAt: undefined,
+            }}
             listView={viewMode === "list"}
             date={date}
             preferences={preferences}
@@ -554,7 +566,7 @@ export default function Planner() {
           {viewMode === "list" ? (
             <DayList
               view={view}
-              meetings={calendar.events}
+              meetings={calendarEvents}
               preferences={preferences}
               open={(block) => openBlock(block.id)}
               run={run}
@@ -567,7 +579,7 @@ export default function Planner() {
               tabIndex={0}
             >
               <div
-                className={`timeline ${calendar.events.some((e) => !e.allDay) && !hasClockChange(date, timezone) ? "has-meetings" : ""}`}
+                className={`timeline ${calendarEvents.some((e) => !e.allDay) && !hasClockChange(date, timezone) ? "has-meetings" : ""}`}
                 style={{
                   height:
                     (preferences.visibleEnd - preferences.visibleStart) * 100,
@@ -598,7 +610,7 @@ export default function Planner() {
                   <TimelineBlock
                     key={block.id}
                     block={block}
-                    meetings={calendar.events}
+                    meetings={calendarEvents}
                     recurring={Boolean(
                       view.definitionsById.get(block.definitionId)?.recurrence,
                     )}
@@ -617,13 +629,13 @@ export default function Planner() {
                   />
                 ))}
                 <MeetingLane
-                  events={calendar.events}
+                  events={calendarEvents}
                   date={date}
                   preferences={preferences}
                   blocks={blocks}
                 />
                 {!visible.length &&
-                  !calendar.events.length &&
+                  !calendarEvents.length &&
                   !generation.pending &&
                   !generation.error && (
                     <div className="empty-state">
